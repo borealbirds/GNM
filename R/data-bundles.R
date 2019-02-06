@@ -1,3 +1,5 @@
+ROOT <- "d:/bam/BAM_data_v2019/gnm"
+
 library(mefa4)
 
 ## BAM BBS
@@ -81,8 +83,39 @@ dd <- droplevels(dd[rn,])
 off <- off[rn,]
 spt <- droplevels(nonDuplicated(e1$TAX, Species_ID, TRUE)[SPP,])
 
-save(dd, yy, off, spt, file="d:/bam/BAM_data_v2019/gnm/BAMdb-patched-2019-02-04.RData")
+save(dd, yy, off, spt, file=file.path(ROOT, "data", "BAMdb-patched-2019-02-04.RData"))
+
+## making BCR specific bundles
+
+library(mefa4)
+library(sf)
+
+load(file.path(ROOT, "data", "BAMdb-patched-2019-02-04.RData"))
+lcc_crs <- "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=0 +lon_0=-95 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs"
+
+library(sp)
+
+sf <- sf::st_as_sf(dd, coords = c("X","Y"))
+sf <- st_set_crs(sf, "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+sf <- st_transform(sf, lcc_crs)
+
+#i <- 4
+for (i in 4:14) {
+    cat("\n\nBCR", i, "\n\n")
+    bcri <- st_read(file.path(ROOT, "data", "bcr", paste0("bcr",i,"_100km.shp")))
+    ddi <- st_intersection(sf, bcri)
+    ddi$PKEY <- droplevels(ddi$PKEY)
+    ddi$SS <- droplevels(ddi$SS)
+    ddi$PCODE <- droplevels(ddi$PCODE)
+    yyi <- yy[rownames(ddi),]
+    yyi <- yyi[,colSums(yyi>0)>0]
+    offi <- off[rownames(yyi), colnames(yyi)]
+    spti <- droplevels(spt[colnames(yyi),])
+    BCR <- i
+
+    save(BCR, ddi, yyi, offi, spti, file=file.path(ROOT, "data", paste0("BAMdb-bcr", i, "-2019-02-04.RData")))
+}
 
 
 
-LCC <- CRS("+proj=lcc +lat_1=49 +lat_2=77 +lat_0=0 +lon_0=-95 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs")
+
