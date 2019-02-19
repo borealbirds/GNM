@@ -116,6 +116,15 @@ for (i in 4:14) {
     save(BCR, ddi, yyi, offi, spti, file=file.path(ROOT, "data", paste0("BAMdb-bcr", i, "-2019-02-04.RData")))
 }
 
+ss <- nonDuplicated(dd, SS, TRUE)[,c("SS", "PCODE", "X", "Y")]
+ss$lon <- ss$X
+ss$lat <- ss$Y
 
+ss <- sf::st_as_sf(ss, coords = c("X","Y"))
+ss <- st_set_crs(ss, "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+ss <- st_transform(ss, lcc_crs)
+str(ss)
+
+save(ss,file=file.path(ROOT, "data", "BAMdb-patched-xy.RData"))
 
 
