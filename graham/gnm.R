@@ -1,37 +1,30 @@
 ## --- settings ---
 ## file name for data bundle, need to be in /data/ dir
-fn <- "ab-birds-north-2019-01-30.RData"
+fn <- "BAMdb-GNMsubset-2019-03-01.RData"
 ## project name for storing the output
-PROJ <- "north"
-
-## CAIC = alpha * AIC + (1 - alpha) * BIC, 1: AIC, 0: BIC
-CAICalpha <- 1
-## Number of bootstrap runs, 100 or 240
-MaxB <- 8*32 # 256
+PROJ <- "gnm"
 
 ## test suite uses limited sets
 TEST <- FALSE
 
 if (TEST) {
-    MaxB <- 2
     cat("* Note: this is a test run!\n")
 }
 
 cat("* Loading packages and sourcing functions:")
 library(parallel)
 library(mefa4)
-library(opticut)
-source("~/repos/abmianalytics/birds/00-functions.R")
+library(gbm)
+library(dismo)
+#source("~/repos/abmianalytics/birds/00-functions.R")
 
 ## Create an array from the NODESLIST environnement variable
 if (interactive()) {
     nodeslist <- 2
-    BBB <- 2
-    setwd("d:/abmi/AB_data_v2018/data/analysis/birds")
+    setwd("d:/bam/BAM_data_v2019/gnm")
 } else {
     cat("OK\n* Getting nodes list ... ")
     nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
-    BBB <- MaxB
     cat("OK\n  Nodes list:\n")
     print(nodeslist)
 }
@@ -48,55 +41,82 @@ load(file.path("data", fn))
 
 cat("OK\nload packages on workers .. .")
 tmpcl <- clusterEvalQ(cl, library(mefa4))
-tmpcl <- clusterEvalQ(cl, library(opticut))
-tmpcl <- clusterEvalQ(cl, source("~/repos/abmianalytics/birds/00-functions.R"))
+tmpcl <- clusterEvalQ(cl, library(gbm))
+tmpcl <- clusterEvalQ(cl, library(dismo))
 
 cat("OK\n* Exporting and data loading on workers ... ")
 tmpcl <- clusterExport(cl, "fn")
 if (interactive())
-    tmpcl <- clusterEvalQ(cl, setwd("d:/abmi/AB_data_v2018/data/analysis/birds"))
+    tmpcl <- clusterEvalQ(cl, setwd("d:/bam/BAM_data_v2019/gnm"))
 #tmpcl <- clusterEvalQ(cl, load(file.path("data", fn)))
-clusterExport(cl, c("DAT", "YY", "OFF", "BB", "SSH", "OFFmean"))
+clusterExport(cl, c("dd", "dd2", "off", "yy", "cnf", "CN"))
 
 cat("OK\n* Establishing checkpoint ... ")
-SPP <- colnames(YY)
-DONE <- character(0)
-if (interactive() | TEST)
-    SPP <- SPP[1:2]
+SPP <- colnames(yy)
+BCRlist <- paste0("BCR_", 4:14)
+tmp <- expand.grid(BCR=BCRlist, SPP=SPP)
+SPPBCR <- as.character(interaction(tmp$SPP, tmp$BCR, sep="-"))
 
-DONE <- substr(list.files(paste0("out/", PROJ)), 1, 4)
-TOGO <- setdiff(SPP, DONE)
+DONE <- character(0)
+if (interactive() || TEST)
+    SPPBCR <- SPPBCR[1:2]
+
+DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
+TOGO <- setdiff(SPPBCR, DONE)
+
+run_brt <- function(RUN, SAVE=TRUE, TEST=FALSE) {
+    ## parse input
+    tmp <- strsplit(RUN, "-")[[1L]]
+    spp <- tmp[1L]
+    BCR <- tmp[2L]
+    ## create data subset
+    ss <- dd[,BCR] == 1L
+    DAT <- data.frame(
+        count=as.numeric(yy[ss, spp]),
+        offset=off[ss, spp],
+        weights=dd$wi[ss],
+        dd2[ss, c(cnf, CN[[BCR]])])
+    if (TEST)
+        DAT <- DAT[sample(nrow(DAT), 5000),]
+    RATE <- 0.001
+    ## fit BRT
+    out <- try(gbm.step(DAT,
+        gbm.y = 1,
+        gbm.x = 4:ncol(DAT),
+        offset = DAT$offset, site.weights = DAT$weights,
+        family = "poisson", tree.complexity = 3, learning.rate = RATE, bag.fraction = 0.5))
+    if (inherits(out, "try-error"))
+        out <- try(gbm.step(DAT,
+            gbm.y = 1,
+            gbm.x = 4:ncol(DAT),
+            offset = DAT$offset, site.weights = DAT$weights,
+            family = "poisson", tree.complexity = 3, learning.rate = RATE/10, bag.fraction = 0.5))
+    if (inherits(out, "try-error"))
+        out <- try(gbm.step(DAT,
+            gbm.y = 1,
+            gbm.x = 4:ncol(DAT),
+            offset = DAT$offset, site.weights = DAT$weights,
+            family = "poisson", tree.complexity = 3, learning.rate = RATE/100, bag.fraction = 0.5))
+    if (SAVE) {
+        save(out, file=paste0("out/", PROJ, "/", RUN, ".RData"))
+        return(!inherits(out, "try-error"))
+    }
+    out
+}
 
 cat("OK\n* Start running models:")
 set.seed(as.integer(Sys.time()))
-while (length(TOGO) > 0) {
-    SPP1 <- sample(TOGO, 1)
-    cat("\n  -", length(DONE), "done,", length(TOGO), "more to go, doing", SPP1, "on", date(), "... ")
-    if (interactive())
-        flush.console()
-    t0 <- proc.time()
-    #z <- run_path1(1, "AMRO", mods, CAICalpha=1, wcol="vegw", ssh_class="vegc", ssh_fit="Space")
-    if (interactive()) {
-        res <- pblapply(cl=cl, X=1:BBB, FUN=run_path1,
-            i=SPP1, mods=mods, CAICalpha=CAICalpha,
-            wcol="vegw", ssh_class="vegca", ssh_fit="Space")
-    } else {
-        res <- parLapply(cl, 1:BBB, run_path1,
-            i=SPP1, mods=mods, CAICalpha=CAICalpha,
-            wcol="vegw", ssh_class="vegca", ssh_fit="Space")
-    }
-    attr(res, "timing") <- proc.time() - t0
-    attr(res, "proj") <- PROJ
-    attr(res, "spp") <- SPP1
-    attr(res, "CAICalpha") <- CAICalpha
-    attr(res, "date") <- as.character(Sys.Date())
-    attr(res, "ncl") <- length(cl)
-    save(res,
-        file=paste0("out/", PROJ, "/", SPP1, ".RData"))
-    DONE <- substr(list.files(paste0("out/", PROJ)), 1, 4)
-    TOGO <- setdiff(SPP, DONE)
-    cat("OK")
-}
+TOGO <- sample(TOGO)
+cat("\n  -", length(DONE), "done,", length(TOGO), "more to go -", date(), "... ")
+
+res <- parLapply(cl=cl, X=TOGO, fun=run_brt, SAVE=TRUE, TEST=interactive() || TEST)
+
+DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
+TOGO <- setdiff(SPP, DONE)
+cat("OK")
+
+cat("\n* Result summary: ")
+print(table(res))
 
 ## Releaseing resources.
 cat("\n* Shutting down ... ")

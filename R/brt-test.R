@@ -1,88 +1,50 @@
 library(mefa4)
-library(sf)
 library(raster)
 library(gbm)
 library(dismo)
-#library(maptools)
-#library(dplyr)
 
+ROOT <- "d:/bam/BAM_data_v2019/gnm"
 
-## BCR specific further data processing after data extraction
-## do once per BCR, stays same for each species
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
 
-rfn <- "d:/bam/BAM_data_v2019/gnm/data/sample/bcr6_2011rasters250.grd"
-sfn <- "d:/bam/BAM_data_v2019/gnm/data/BAMdb-bcr6-2019-02-04.RData"
+RUN <- "OSFL-BCR_4"
 
-load(sfn)
+## parse RUN: determine species and BCR
 
-r <- list()
-for (i in 1:18)
-    r[[i]] <- raster(rfn, i)
-r <- stack(r)
-
-#ddi2 <- st_transform(ddi, proj4string(r))
-#xy <- st_coordinates(ddi)
-#xy2 <- st_coordinates(ddi2)
-#summary(xy-xy2)
-
-vi <- extract(r, ddi)
-j <- rowSums(is.na(vi)) == 0
-
-ddi <- ddi[j,]
-yyi <- yyi[j,]
-offi <- offi[j,]
-vi <- vi[j,]
-
-xy <- st_coordinates(ddi)
-sr <- rasterize(xy, r, field=1, fun='sum')
-sr25 <- focal(sr, w=matrix(1,nrow=5,ncol=5), na.rm=TRUE) # 250m res
-ni <- extract(sr25, xy)
-wi <- 1/ni
-nsub <- ceiling(sum(sapply(sort(unique(ni)), function(z) sum(ni == z)/z)))
-
-DAT <- data.frame(
-    count=0,
-    offset=0,
-    weights=wi,
-    vi)
-to_fact <- c("wat", "urbag", "landform")
-for (i in to_fact)
-    if (i %in% colnames(DAT)) {
-        DAT[[i]] <- as.factor(DAT[[i]])
-        r[[i]] <- as.factor(r[[i]])
-    }
-
-## given BCR level data template, this runs for each species
-
-## 2005 and earlier, 2006 and later: add in temporal blocking + year as covariate
-
-spp <- "CAWA"
-
-DAT$count <- as.numeric(yyi[,spp])
-DAT$offset <- offi[,spp]
-table(DAT$count)
-
-t0 <- proc.time()
-brt1 <- try(gbm.step(DAT,
-    gbm.y = 1,
-    gbm.x = 4:ncol(DAT),
-    offset = DAT$offset, site.weights = DAT$weights,
-    family = "poisson", tree.complexity = 3, learning.rate = 0.001, bag.fraction = 0.5))
-if (inherits(brt1, "try-error"))
-    brt1 <- try(gbm.step(DAT,
+run_brt <- function(RUN, SAVE=TRUE) {
+    ## parse input
+    tmp <- strsplit(RUN, "-")[[1L]]
+    spp <- tmp[1L]
+    BCR <- tmp[2L]
+    ## create data subset
+    ss <- dd[,BCR] == 1L
+    DAT <- data.frame(
+        count=as.numeric(yy[ss, spp]),
+        offset=off[ss, spp],
+        weights=dd$wi[ss],
+        dd2[ss, c(cnf, CN[[BCR]])])
+    ## fit BRT
+    out <- try(gbm.step(DAT,
         gbm.y = 1,
         gbm.x = 4:ncol(DAT),
         offset = DAT$offset, site.weights = DAT$weights,
-        family = "poisson", tree.complexity = 3, learning.rate = 0.0001, bag.fraction = 0.5))
-if (inherits(brt1, "try-error"))
-    brt1 <- try(gbm.step(DAT,
-        gbm.y = 1,
-        gbm.x = 4:ncol(DAT),
-        offset = DAT$offset, site.weights = DAT$weights,
-        family = "poisson", tree.complexity = 3, learning.rate = 0.00001, bag.fraction = 0.5))
-proc.time() - t0 # BCR6/CAWA ~ 3.25h
-
-save(brt1, file="d:/bam/BAM_data_v2019/gnm/tmp/bcr1-all-pt.Rdata")
+        family = "poisson", tree.complexity = 3, learning.rate = 0.001, bag.fraction = 0.5))
+    if (inherits(out, "try-error"))
+        out <- try(gbm.step(DAT,
+            gbm.y = 1,
+            gbm.x = 4:ncol(DAT),
+            offset = DAT$offset, site.weights = DAT$weights,
+            family = "poisson", tree.complexity = 3, learning.rate = 0.0001, bag.fraction = 0.5))
+    if (inherits(out, "try-error"))
+        out <- try(gbm.step(DAT,
+            gbm.y = 1,
+            gbm.x = 4:ncol(DAT),
+            offset = DAT$offset, site.weights = DAT$weights,
+            family = "poisson", tree.complexity = 3, learning.rate = 0.00001, bag.fraction = 0.5))
+    if (SAVE)
+        save(out, file=paste0(RUN, ".RData"))
+    out
+}
 
 ## timing subset run
 
@@ -291,4 +253,5 @@ for (j in 1:length(speclist)) {
         gc()
     }
 }
+
 

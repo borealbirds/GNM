@@ -85,7 +85,7 @@ spt <- droplevels(nonDuplicated(e1$TAX, Species_ID, TRUE)[SPP,])
 
 save(dd, yy, off, spt, file=file.path(ROOT, "data", "BAMdb-patched-2019-02-04.RData"))
 
-## making BCR specific bundles
+## making bundle with predictors and buffered BCR indicators
 
 library(mefa4)
 library(sf)
@@ -99,32 +99,134 @@ sf <- sf::st_as_sf(dd, coords = c("X","Y"))
 sf <- st_set_crs(sf, "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 sf <- st_transform(sf, lcc_crs)
 
+if (FALSE) {
+    ss <- nonDuplicated(dd, SS, TRUE)[,c("SS", "PCODE", "X", "Y")]
+    ss$lon <- ss$X
+    ss$lat <- ss$Y
+
+    ss <- sf::st_as_sf(ss, coords = c("X","Y"))
+    ss <- st_set_crs(ss, "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+    ss <- st_transform(ss, lcc_crs)
+    str(ss)
+
+    save(ss,file=file.path(ROOT, "data", "BAMdb-patched-xy.RData"))
+}
+
+dd$YR2 <- ifelse(dd$YEAR < 2006, 1, 2)
+dd$SSYR2 <- interaction(dd$SS, dd$YR2, sep="_", drop=TRUE)
+
+dd$o <- seq_len(nrow(dd))
+set.seed(1)
+dd <- dd[sample(dd$o),]
+dd <- dd[!duplicated(dd$SSYR2),]
+dd <- dd[order(dd$o),]
+dd$o <- NULL
+
+e <- new.env()
+load(file.path(ROOT, "data", "predictors", "ss_2001attributes.RData"), envir=e)
+dd2001 <- as.data.frame(e$ss)[match(dd$SS, e$ss$SS),]
+rownames(dd2001) <- rownames(dd)
+rm(e)
+dd2001$SS <- dd2001$PCODE <- dd2001$lat <- dd2001$lon <- NULL
+dd2001$geometry <- NULL
+
+e <- new.env()
+load(file.path(ROOT, "data", "predictors", "ss_2011attributes.RData"), envir=e)
+dd2011 <- as.data.frame(e$ss)[match(dd$SS, e$ss$SS),]
+rownames(dd2011) <- rownames(dd)
+rm(e)
+dd2011$SS <- dd2011$PCODE <- dd2011$lat <- dd2011$lon <- NULL
+dd2011$geometry <- NULL
+
+stopifnot(all(colnames(dd2001)==colnames(dd2011)))
+
+dd2 <- dd2001 # use 2001 version for -2005 data
+dd2[dd$YEAR >= 2006,] <- dd2011[dd$YEAR >= 2006,] # use 2011 version for 2006- data
+
+dd2$lf[dd2$lf < 1] <- 0
+dd2$lf <- as.factor(as.integer(dd2$lf))
+dd2$nalc <- as.factor(dd2$nalc)
+
+sf <- sf[rownames(dd),]
+yy <- yy[rownames(dd),]
+off <- off[rownames(dd),]
+
 #i <- 4
 for (i in 4:14) {
     cat("\n\nBCR", i, "\n\n")
     bcri <- st_read(file.path(ROOT, "data", "bcr", paste0("bcr",i,"_100km.shp")))
     ddi <- st_intersection(sf, bcri)
-    ddi$PKEY <- droplevels(ddi$PKEY)
-    ddi$SS <- droplevels(ddi$SS)
-    ddi$PCODE <- droplevels(ddi$PCODE)
-    yyi <- yy[rownames(ddi),]
-    yyi <- yyi[,colSums(yyi>0)>0]
-    offi <- off[rownames(yyi), colnames(yyi)]
-    spti <- droplevels(spt[colnames(yyi),])
-    BCR <- i
-
-    save(BCR, ddi, yyi, offi, spti, file=file.path(ROOT, "data", paste0("BAMdb-bcr", i, "-2019-02-04.RData")))
+    dd[[paste0("BCR_", i)]] <- ifelse(rownames(dd) %in% rownames(ddi), 1L, 0L)
 }
 
-ss <- nonDuplicated(dd, SS, TRUE)[,c("SS", "PCODE", "X", "Y")]
-ss$lon <- ss$X
-ss$lat <- ss$Y
 
-ss <- sf::st_as_sf(ss, coords = c("X","Y"))
-ss <- st_set_crs(ss, "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
-ss <- st_transform(ss, lcc_crs)
-str(ss)
+ss <- rowSums(is.na(dd2)) == 0
+dd <- dd[ss,]
+dd2 <- dd2[ss,]
+yy <- yy[ss,]
+off <- off[ss,]
+sf <- sf[ss,]
 
-save(ss,file=file.path(ROOT, "data", "BAMdb-patched-xy.RData"))
+any(colSums(yy) == 0)
 
+c(sum(is.na(dd)), sum(is.na(dd2)), sum(is.na(off)), sum(is.na(yy)))
+colSums(is.na(dd)) # some date missing -- we let it go
 
+## evaluate predictor set based on hist, SD, etc
+
+get_cn <- function(z, rmax=0.9) {
+    COR <- cor(z)
+    cr <- mefa:::stack.dist(as.dist(COR), dim.names = TRUE)
+    cr <- cr[order(abs(cr$dist), decreasing = TRUE),]
+    while(any(abs(cr$dist) > rmax)) {
+        i <- as.character(cr[1,2])
+        j <- cr[,1] == i | cr[,2] == i
+        cr <- cr[!j,]
+    }
+    union(as.character(cr[,1]), as.character(cr[,2]))
+}
+
+## factor
+cnf <- colnames(dd2)[!sapply(dd2, is.numeric)]
+
+z <- as.matrix(dd2[,sapply(dd2, is.numeric)])
+cnn <- get_cn(z)
+
+CN <- list()
+for (i in 4:14) {
+    cat("BCR", i, "\n")
+    BCR <- paste0("BCR_", i)
+    z <- as.matrix(dd2[dd[,BCR] == 1L, cnn])
+    #MEAN <- colMeans(z)
+    SD <- apply(z, 2, sd)
+    CN[[BCR]] <- get_cn(z[,SD > 0])
+}
+
+sapply(CN, length)
+
+## weights
+
+xy <- st_coordinates(sf)
+bb <- bbox(xy)
+r <- raster(
+    xmn=bb["x", "min"],
+    xmx=bb["x", "max"],
+    ymn=bb["y", "min"],
+    ymx=bb["y", "max"],
+    res=250,
+    crs=st_crs(sf))
+sr <- rasterize(xy, r, field=1, fun='sum')
+W <- matrix(1,nrow=5,ncol=5)
+W[c(1,5,21,25)] <- 0
+sr25 <- focal(sr, w=W, na.rm=TRUE)
+ni <- extract(sr25, xy)
+ni[is.na(ni)] <- 1
+wi <- 1/ni
+nsub <- ceiling(sum(sapply(sort(unique(ni)), function(z) sum(ni == z)/z)))
+
+dd$ni <- ni
+dd$wi <- wi
+
+save(dd, dd2, yy, off, spt, cnf, cnn, CN, nsub,
+    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
+#load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
