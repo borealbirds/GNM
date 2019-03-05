@@ -14,7 +14,7 @@ e2 <- new.env()
 load("d:/bam/BAM_data_v2019/nwt/BU-nonABMI-offsets-2019-02-04.RData", envir=e2)
 names(e2)
 
-## WindTrax (AB)
+## WildTrax (AB)
 e3 <- new.env()
 load("d:/bam/BAM_data_v2019/nwt/nwt-wildtrax-offsets-2019-01-16.RData", envir=e3)
 names(e3)
