@@ -49,10 +49,12 @@ tmpcl <- clusterExport(cl, "fn")
 if (interactive())
     tmpcl <- clusterEvalQ(cl, setwd("d:/bam/BAM_data_v2019/gnm"))
 #tmpcl <- clusterEvalQ(cl, load(file.path("data", fn)))
-clusterExport(cl, c("dd", "dd2", "off", "yy", "cnf", "CN"))
+clusterExport(cl, c("dd", "dd2", "off", "yy", "cnf", "CN", "PROJ"))
 
 cat("OK\n* Establishing checkpoint ... ")
-SPP <- colnames(yy)
+#SPP <- colnames(yy)
+SPP <- c("ALFL", "AMRO", "BOCH", "BTNW", "CAWA",
+    "OSFL", "OVEN", "RUBL", "WCSP", "YRWA")
 BCRlist <- paste0("BCR_", 4:14)
 tmp <- expand.grid(BCR=BCRlist, SPP=SPP)
 SPPBCR <- as.character(interaction(tmp$SPP, tmp$BCR, sep="-"))
@@ -112,7 +114,7 @@ cat("\n  -", length(DONE), "done,", length(TOGO), "more to go -", date(), "... "
 res <- parLapply(cl=cl, X=TOGO, fun=run_brt, SAVE=TRUE, TEST=interactive() || TEST)
 
 DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
-TOGO <- setdiff(SPP, DONE)
+TOGO <- setdiff(SPPBCR, DONE)
 cat("OK")
 
 cat("\n* Result summary: ")
