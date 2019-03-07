@@ -3,7 +3,13 @@
 fn <- "BAMdb-GNMsubset-2019-03-01.RData"
 ## project name for storing the output
 PROJ <- "gnm"
-
+## cli arguments
+bcr <- 4:14
+if (!interactive()) {
+    bcr <- commandArgs(trailingOnly = TRUE)[1L]
+    if (as.integer(bcr) == 0L)
+        bcr <- 4:14
+}
 ## test suite uses limited sets
 TEST <- FALSE
 
@@ -17,6 +23,9 @@ library(mefa4)
 library(gbm)
 library(dismo)
 #source("~/repos/abmianalytics/birds/00-functions.R")
+
+cat("OK\n* Loading data on master ... ")
+load(file.path("data", fn))
 
 ## Create an array from the NODESLIST environnement variable
 if (interactive()) {
@@ -36,9 +45,6 @@ if (interactive()) {
 cat("* Spawning workers...")
 cl <- makePSOCKcluster(nodeslist, type = "PSOCK")
 
-cat("OK\n* Loading data on master ... ")
-load(file.path("data", fn))
-
 cat("OK\nload packages on workers .. .")
 tmpcl <- clusterEvalQ(cl, library(mefa4))
 tmpcl <- clusterEvalQ(cl, library(gbm))
@@ -51,74 +57,91 @@ if (interactive())
 #tmpcl <- clusterEvalQ(cl, load(file.path("data", fn)))
 clusterExport(cl, c("dd", "dd2", "off", "yy", "cnf", "CN", "PROJ"))
 
+
+
 cat("OK\n* Establishing checkpoint ... ")
 #SPP <- colnames(yy)
 SPP <- c("ALFL", "AMRO", "BOCH", "BTNW", "CAWA",
     "OSFL", "OVEN", "RUBL", "WCSP", "YRWA")
-BCRlist <- paste0("BCR_", 4:14)
-tmp <- expand.grid(BCR=BCRlist, SPP=SPP)
+BCRlist <- paste0("BCR_", bcr)
+tmp <- expand.grid(SPP=SPP, BCR=BCRlist)
 SPPBCR <- as.character(interaction(tmp$SPP, tmp$BCR, sep="-"))
 
+
+
 DONE <- character(0)
-if (interactive() || TEST)
-    SPPBCR <- SPPBCR[1:2]
+#if (interactive() || TEST)
+#    SPPBCR <- SPPBCR[1:2]
 
 DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
 TOGO <- setdiff(SPPBCR, DONE)
 
-run_brt <- function(RUN, SAVE=TRUE, TEST=FALSE) {
+run_brt <- function(RUN, TRY=1, TEST=FALSE) {
     ## parse input
     tmp <- strsplit(RUN, "-")[[1L]]
     spp <- tmp[1L]
     BCR <- tmp[2L]
     ## create data subset
     ss <- dd[,BCR] == 1L
-    DAT <- data.frame(
-        count=as.numeric(yy[ss, spp]),
-        offset=off[ss, spp],
-        weights=dd$wi[ss],
-        dd2[ss, c(cnf, CN[[BCR]])])
-    if (TEST)
-        DAT <- DAT[sample(nrow(DAT), 5000),]
-    RATE <- 0.001
-    ## fit BRT
-    out <- try(gbm.step(DAT,
-        gbm.y = 1,
-        gbm.x = 4:ncol(DAT),
-        offset = DAT$offset, site.weights = DAT$weights,
-        family = "poisson", tree.complexity = 3, learning.rate = RATE, bag.fraction = 0.5))
-    if (inherits(out, "try-error"))
+    if (sum(yy[ss, spp]) < 1)
+        return(structure(
+            sprintf("0 detections for %s in %s", spp, BCR),
+            class="try-error"))
+    if (TEST) {
+        y <- as.numeric(yy[ss, spp])
+        off <- off[ss, spp]
+        w <- dd$wi[ss]
+        DAT <- data.frame(dd2[ss, c(cnf, CN[[BCR]][1:5])])
+        out <- try(glm(y ~ ., DAT, offset=off, weights=w, family=poisson))
+    } else {
+        DAT <- data.frame(
+            count=as.numeric(yy[ss, spp]),
+            offset=off[ss, spp],
+            weights=dd$wi[ss],
+            dd2[ss, c(cnf, CN[[BCR]])])
+        RATE <- 0.001
+        ## fit BRT
         out <- try(gbm.step(DAT,
             gbm.y = 1,
             gbm.x = 4:ncol(DAT),
             offset = DAT$offset, site.weights = DAT$weights,
-            family = "poisson", tree.complexity = 3, learning.rate = RATE/10, bag.fraction = 0.5))
-    if (inherits(out, "try-error"))
-        out <- try(gbm.step(DAT,
-            gbm.y = 1,
-            gbm.x = 4:ncol(DAT),
-            offset = DAT$offset, site.weights = DAT$weights,
-            family = "poisson", tree.complexity = 3, learning.rate = RATE/100, bag.fraction = 0.5))
-    if (SAVE) {
-        save(out, file=paste0("out/", PROJ, "/", RUN, ".RData"))
-        return(!inherits(out, "try-error"))
+            family = "poisson", tree.complexity = 3, learning.rate = RATE, bag.fraction = 0.5))
+        if (TRY > 1 && inherits(out, "try-error"))
+            out <- try(gbm.step(DAT,
+                gbm.y = 1,
+                gbm.x = 4:ncol(DAT),
+                offset = DAT$offset, site.weights = DAT$weights,
+                family = "poisson", tree.complexity = 3, learning.rate = RATE/10, bag.fraction = 0.5))
+        if (TRY > 2 && inherits(out, "try-error"))
+            out <- try(gbm.step(DAT,
+                gbm.y = 1,
+                gbm.x = 4:ncol(DAT),
+                offset = DAT$offset, site.weights = DAT$weights,
+                family = "poisson", tree.complexity = 3, learning.rate = RATE/100, bag.fraction = 0.5))
     }
     out
 }
 
 cat("OK\n* Start running models:")
 set.seed(as.integer(Sys.time()))
-TOGO <- sample(TOGO)
-cat("\n  -", length(DONE), "done,", length(TOGO), "more to go -", date(), "... ")
-
-res <- parLapply(cl=cl, X=TOGO, fun=run_brt, SAVE=TRUE, TEST=interactive() || TEST)
-
-DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
-TOGO <- setdiff(SPPBCR, DONE)
-cat("OK")
-
-cat("\n* Result summary: ")
-print(table(res))
+while (length(TOGO) > 0) {
+    SET <- TOGO[seq_len(min(length(TOGO), length(cl)))]
+    cat("\n  -", length(DONE), "done,", length(TOGO), "more to go -", date(), "... ")
+    if (interactive())
+        flush.console()
+    t0 <- proc.time()
+    res <- parLapply(cl=cl, X=SET, fun=run_brt, TEST=interactive() || TEST)
+    names(res) <- SET
+    cat("OK")
+    for (i in SET) {
+        cat("\n    > Saving:", i, "... ")
+        out <- res[[i]]
+        save(out, file=paste0("out/", PROJ, "/", i, ".RData"))
+        cat("OK")
+    }
+    DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
+    TOGO <- setdiff(SPPBCR, DONE)
+}
 
 ## Releaseing resources.
 cat("\n* Shutting down ... ")
