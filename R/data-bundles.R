@@ -175,30 +175,47 @@ colSums(is.na(dd)) # some date missing -- we let it go
 ## evaluate predictor set based on hist, SD, etc
 
 get_cn <- function(z, rmax=0.9) {
-    COR <- cor(z)
+    SD <- apply(z, 2, sd)
+    COR <- cor(z[,SD > 0])
     cr <- mefa:::stack.dist(as.dist(COR), dim.names = TRUE)
     cr <- cr[order(abs(cr$dist), decreasing = TRUE),]
-    while(any(abs(cr$dist) > rmax)) {
-        i <- as.character(cr[1,2])
-        j <- cr[,1] == i | cr[,2] == i
-        cr <- cr[!j,]
+    cr[,1] <- as.character(cr[,1])
+    cr[,2] <- as.character(cr[,2])
+    cr$Landsc1 <- startsWith(cr[,1], "Landsc750_")
+    cr$Landsc2 <- startsWith(cr[,2], "Landsc750_")
+    cr1 <- cr[cr$Landsc1 | cr$Landsc2,]
+    cr2 <- cr[!(cr$Landsc1 | cr$Landsc2),]
+    while(any(abs(cr1$dist) > rmax)) {
+        i <- if (cr1$Landsc1[1])
+            cr1[1,1] else cr1[1,2]
+        j <- cr1[,1] == i | cr1[,2] == i
+        cr1 <- cr1[!j,]
     }
-    union(as.character(cr[,1]), as.character(cr[,2]))
+    cr3 <- rbind(cr1, cr2)
+    cr3 <- cr3[order(abs(cr3$dist), decreasing = TRUE),]
+    while(any(abs(cr3$dist) > rmax)) {
+        i <- if (cr3$Landsc1[1])
+            cr3[1,1] else cr3[1,2]
+        j <- cr3[,1] == i | cr3[,2] == i
+        cr3 <- cr3[!j,]
+    }
+    union(as.character(cr3[,1]), as.character(cr3[,2]))
 }
 
 ## factor
 cnf <- colnames(dd2)[!sapply(dd2, is.numeric)]
 
-z <- as.matrix(dd2[,sapply(dd2, is.numeric)])
-cnn <- get_cn(z)
+#z <- as.matrix(dd2[,sapply(dd2, is.numeric)])
+#cnn <- get_cn(z)
 
 CN <- list()
 for (i in 4:14) {
     cat("BCR", i, "\n")
     BCR <- paste0("BCR_", i)
-    z <- as.matrix(dd2[dd[,BCR] == 1L, cnn])
+    z <- as.matrix(dd2[dd[,BCR] == 1L, sapply(dd2, is.numeric)])
     #MEAN <- colMeans(z)
     SD <- apply(z, 2, sd)
+    z[,SD > 0]
     CN[[BCR]] <- get_cn(z[,SD > 0])
 }
 
@@ -227,6 +244,29 @@ nsub <- ceiling(sum(sapply(sort(unique(ni)), function(z) sum(ni == z)/z)))
 dd$ni <- ni
 dd$wi <- wi
 
-save(dd, dd2, yy, off, spt, cnf, cnn, CN, nsub,
+save(dd, dd2, yy, off, spt, cnf, CN,
     file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
 #load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
+
+
+fullBCRlist <- names(sort(colSums(dd[,paste0("BCR_", 4:14)])))
+
+b <- as(as.matrix(dd[,paste0("BCR_", 4:14)]), "dgCMatrix")
+b <- b[,fullBCRlist]
+
+yy01 <- yy
+yy01[yy>0] <- 1
+detbcr <- t(sapply(colnames(yy), function(z) colSums(yy01[,z] * b)))
+attr(detbcr, "nbcr") <- colSums(b)
+
+SPPBCR <- NULL
+for (i in colnames(detbcr)) {
+    for (j in rownames(detbcr)) {
+        if (detbcr[j,i] > 0)
+            SPPBCR <- c(SPPBCR, paste0(j, "-", i))
+    }
+}
+
+
+save(dd, dd2, yy, off, spt, cnf, cnn, CN, nsub, detbcr, SPPBCR,
+    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
