@@ -128,7 +128,7 @@ cat("OK\n* Start running models:")
 set.seed(as.integer(Sys.time()))
 while (length(TOGO) > 0) {
     SET <- sample(TOGO)[seq_len(min(length(TOGO), length(cl)))]
-    cat("\n  -", length(DONE), "done,", length(TOGO), "more to go -", date(), "... ")
+    cat("\n  -", length(TOGO), "more species to go -", date(), "... ")
     if (interactive())
         flush.console()
     t0 <- proc.time()
