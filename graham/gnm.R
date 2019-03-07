@@ -45,7 +45,7 @@ if (interactive()) {
 cat("* Spawning workers...")
 cl <- makePSOCKcluster(nodeslist, type = "PSOCK")
 
-cat("OK\nload packages on workers .. .")
+cat("OK\n* Loading packages on workers ... ")
 tmpcl <- clusterEvalQ(cl, library(mefa4))
 tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(dismo))
@@ -60,9 +60,9 @@ clusterExport(cl, c("dd", "dd2", "off", "yy", "cnf", "CN", "PROJ"))
 
 
 cat("OK\n* Establishing checkpoint ... ")
-#SPP <- colnames(yy)
-SPP <- c("ALFL", "AMRO", "BOCH", "BTNW", "CAWA",
-    "OSFL", "OVEN", "RUBL", "WCSP", "YRWA")
+SPP <- colnames(yy)
+#SPP <- c("ALFL", "AMRO", "BOCH", "BTNW", "CAWA",
+#    "OSFL", "OVEN", "RUBL", "WCSP", "YRWA")
 BCRlist <- paste0("BCR_", bcr)
 tmp <- expand.grid(SPP=SPP, BCR=BCRlist)
 SPPBCR <- as.character(interaction(tmp$SPP, tmp$BCR, sep="-"))
@@ -125,7 +125,7 @@ run_brt <- function(RUN, TRY=1, TEST=FALSE) {
 cat("OK\n* Start running models:")
 set.seed(as.integer(Sys.time()))
 while (length(TOGO) > 0) {
-    SET <- TOGO[seq_len(min(length(TOGO), length(cl)))]
+    SET <- sample(TOGO)[seq_len(min(length(TOGO), length(cl)))]
     cat("\n  -", length(DONE), "done,", length(TOGO), "more to go -", date(), "... ")
     if (interactive())
         flush.console()
