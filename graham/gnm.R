@@ -10,9 +10,11 @@ if (!interactive()) {
     if (as.integer(bcr) == 0L)
         bcr <- 4:14
 }
+cat("* Using BCR:\n")
+print(bcr)
+
 ## test suite uses limited sets
 TEST <- FALSE
-
 if (TEST) {
     cat("* Note: this is a test run!\n")
 }
