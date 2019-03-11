@@ -5,10 +5,19 @@ fn <- "BAMdb-GNMsubset-2019-03-01.RData"
 PROJ <- "gnm"
 ## cli arguments
 bcr <- 4:14
+SUB <- NULL
 if (!interactive()) {
-    bcr <- commandArgs(trailingOnly = TRUE)[1L]
-    if (as.integer(bcr) == 0L)
-        bcr <- 4:14
+    args <- commandArgs(trailingOnly = TRUE)
+    ## if 1 arg provided, it is BCR
+    if (length(args) >= 1) {
+        bcr <- args[1L]
+        if (as.integer(bcr) == 0L)
+            bcr <- 4:14
+    }
+    ## if 2nd arg provided, it is subset size
+    if (length(args) >= 2) {
+        SUB <- as.integer(commandArgs(trailingOnly = TRUE)[2L])
+    }
 }
 cat("* Using BCR:\n")
 print(bcr)
@@ -78,7 +87,7 @@ DONE <- character(0)
 DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
 TOGO <- setdiff(SPPBCR, DONE)
 
-run_brt <- function(RUN, TRY=1, TEST=FALSE) {
+run_brt <- function(RUN, TRY=1, TEST=FALSE, SUB=NULL) {
     ## parse input
     tmp <- strsplit(RUN, "-")[[1L]]
     spp <- tmp[1L]
@@ -101,6 +110,13 @@ run_brt <- function(RUN, TRY=1, TEST=FALSE) {
             offset=off[ss, spp],
             weights=dd$wi[ss],
             dd2[ss, c(cnf, CN[[BCR]])])
+        if (!is.null(SUB)) {
+            DAT$weights <- 1
+            ## this is not bootstrap resampling
+            ## just subset to reduce memory footprint
+            DAT <- DAT[sample(nrow(DAT), SUB, prob=DAT$weights),]
+            cat("Sample size =", nrow(DAT))
+        }
         RATE <- 0.001
         ## fit BRT
         out <- try(gbm.step(DAT,
@@ -132,13 +148,14 @@ while (length(TOGO) > 0) {
     if (interactive())
         flush.console()
     t0 <- proc.time()
-    res <- parLapply(cl=cl, X=SET, fun=run_brt, TEST=interactive() || TEST)
+    #hhh <- run_brt(SET[1], SUB=1000)
+    res <- parLapply(cl=cl, X=SET, fun=run_brt, TEST=interactive() || TEST, SUB=SUB)
     names(res) <- SET
     cat("OK")
     for (i in SET) {
         cat("\n    > Saving:", i, "... ")
         out <- res[[i]]
-        save(out, file=paste0("out/", PROJ, "/", i, ".RData"))
+        save(out, file=paste0("out/", PROJ, "/", if (TEST) "00test_" else "", i, ".RData"))
         cat("OK")
     }
     DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])

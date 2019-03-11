@@ -270,3 +270,10 @@ for (i in colnames(detbcr)) {
 
 save(dd, dd2, yy, off, spt, cnf, cnn, CN, nsub, detbcr, SPPBCR,
     file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
+
+
+f <- function(x)
+    ceiling(sum(sapply(sort(unique(dd$ni[x>0])), function(z) sum(dd$ni[x>0] == z)/z)))
+h <- data.frame(n=colSums(dd[,paste0("BCR_", 4:14)]),
+    neff=apply(dd[,paste0("BCR_", 4:14)], 2, f))
+h$p <- h$neff/h$n
