@@ -28,16 +28,19 @@ names(e4)
 
 ## useful attributes
 
-cn <- c("PKEY", "SS", "PCODE","DATE","DATI", "YEAR", "X", "Y", "TSSR", "JDAY", "TREE", "LCC4", "MAXDUR", "MAXDIS")
+cn <- c("PKEY", "SS", "PCODE","DATE","DATI", "YEAR", "X", "Y", 
+    "TSSR", "JDAY", "TREE", "LCC4", "MAXDUR", "MAXDIS", "ROAD")
 
 setdiff(cn, colnames(e2$dd))
 e2$dd$PCODE <- interaction("BU", e2$dd$ProjectID, sep="_")
+e2$dd$ROAD <- 0
 dd2 <- e2$dd[,cn]
 dd2$BCR <- NA
 
 setdiff(cn, colnames(e3$dd))
 #e3$dd$project.name <- make.names(e3$dd$project.name, unique = TRUE)
 e3$dd$PCODE <- interaction("BU", e3$dd$project.name, sep="_")
+e3$dd$ROAD <- 0
 dd3 <- e3$dd[,cn]
 dd3$BCR <- NA
 
@@ -45,6 +48,7 @@ dd4 <- data.frame(e4$PKEY, e4$SS[match(e4$PKEY$SS, e4$SS$SS),])
 dd4$YEAR <- dd4$YearCollected
 dd4$DATI <- dd4$DATE
 dd4$DATE <- as.Date(dd4$DATE)
+dd4$ROAD <- 0
 setdiff(cn, colnames(dd4))
 dd4 <- dd4[,cn]
 dd4$BCR <- NA
@@ -63,7 +67,7 @@ dd <- dd[dd$YEAR >= 1991,]
 dd <- dd[dd$X < 0,]
 dd <- dd[dd$Y > 30,]
 
-dd <- dd[,c("PKEY", "SS", "PCODE","DATI","YEAR", "X", "Y","MAXDUR", "MAXDIS")]
+dd <- dd[,c("PKEY", "SS", "PCODE","DATI","YEAR", "X", "Y","MAXDUR", "MAXDIS", "ROAD")]
 
 ## species data and offsets
 
