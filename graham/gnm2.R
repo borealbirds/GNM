@@ -50,6 +50,7 @@ if (interactive()) {
 
 cat("OK\n* Loading data on master ... ")
 load(file.path("data", fn))
+load(file.path("data", "NTREE.RData"))
 
 ## Create the cluster with the nodes name.
 ## One process per count of node name.
@@ -68,7 +69,7 @@ tmpcl <- clusterExport(cl, "fn")
 if (interactive())
     tmpcl <- clusterEvalQ(cl, setwd("d:/bam/BAM_data_v2019/gnm"))
 #tmpcl <- clusterEvalQ(cl, load(file.path("data", fn)))
-clusterExport(cl, c("dd", "dd2", "off", "yy", "cnf", "CN", "PROJ"))
+clusterExport(cl, c("dd", "dd2", "off", "yy", "cnf", "CN", "PROJ", "NTREE"))
 
 cat("OK\n* Establishing checkpoint ... ")
 SPP <- colnames(yy)
@@ -89,7 +90,7 @@ table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2))
 
 TOGO <- setdiff(SPPBCR, DONE)
 
-run_brt2 <- function(RUN, SUB=NULL, RATE=0.001, n.trees=1000) {
+run_brt2 <- function(RUN, SUB=NULL, RATE=0.001) {
     ## parse input
     tmp <- strsplit(RUN, "-")[[1L]]
     spp <- tmp[1L]
@@ -114,9 +115,12 @@ run_brt2 <- function(RUN, SUB=NULL, RATE=0.001, n.trees=1000) {
         DAT <- DAT[sample(nrow(DAT), SUB, prob=DAT$weights),]
         cat("Sample size =", nrow(DAT), "\n")
     }
+    ntree <- NTREE[spp, BCR]
+    if (ntree == 0)
+        ntree <- 10000
     out <- try(gbm::gbm(count ~ . + offset(offset),
         data=DAT,
-        n.trees = n.trees,
+        n.trees = ntree,
         interaction.depth = 3,
         shrinkage = RATE,
         bag.fraction = 0.5,
