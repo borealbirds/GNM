@@ -170,7 +170,35 @@ for (h in leftover) {
     save(out, file=file.path(ROOT, "out", "leftover", paste0(h, ".RData")))
 }
 
+## collecting ntree info
 
+SPP <- sort(colnames(yy))
+NTREE <- matrix(0, length(SPP), 11)
+dimnames(NTREE) <- list(SPP, 4:14)
+
+for (spp in SPP) {
+
+    fl <- paste0(spp, "-BCR_", 4:14, ".RData")
+    names(fl) <- 4:14
+
+    cat("\n", spp, ": ", sep="")
+    for (i in 4:14) {
+        cat(i, ", ", sep="")
+        flush.console()
+        e <- new.env()
+        tmp <- try(load(file.path(ROOT, "out", "gnm", fl[as.character(i)]), envir=e))
+        if (!inherits(tmp, "try-error")) {
+            brt <- e$out
+            if (!is.null(brt)) {
+                if (!inherits(brt, "try-error")) {
+                    NTREE[spp, as.character(i)] <- brt$n.trees
+                }
+            }
+        }
+    }
+}
+colnames(NTREE) <- paste0("BCR_",4:14)
+save(NTREE, file=file.path(ROOT, "NTREE.RData"))
 
 
 ## now predicting
@@ -224,30 +252,41 @@ for (i in 4:14) {
     brt <- e$out
     rm(e)
 
-    cat(" -", brt$n.trees)
+    cat(" -", if (inherits(brt, "try-error")) NA else brt$n.trees)
 
     ## predict
     PIECES[[BCR]] <- predict_gbm(brt, STACK[[BCR]], 0)
-    cat(" @", (proc.time() - t0)[3]/60, "min")
+    cat(" @", round((proc.time() - t0)[3]/60, 2), "min")
 }
 
 
 rast <- mosaic(
     PIECES[['BCR_4']],
     PIECES[['BCR_5']],
-#    PIECES[['BCR_6']],
-#    PIECES[['BCR_7']],
-#    PIECES[['BCR_8']],
-#    PIECES[['BCR_9']],
-#    PIECES[['BCR_10']],
-#    PIECES[['BCR_11']],
-#    PIECES[['BCR_12']],
-#    PIECES[['BCR_13']],
-#    PIECES[['BCR_14']],
+    PIECES[['BCR_6']],
+    PIECES[['BCR_7']],
+    PIECES[['BCR_8']],
+    PIECES[['BCR_9']],
+    PIECES[['BCR_10']],
+    PIECES[['BCR_11']],
+    PIECES[['BCR_12']],
+    PIECES[['BCR_13']],
+    PIECES[['BCR_14']],
     fun=mean)
 
+writeRaster(rast, file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, ".tif")))
 
-
+MAX <- 3 * cellStats(rast, 'mean')
+bluegreen.colors <- colorRampPalette(c("#FFFACD", "lemonchiffon","#FFF68F", "khaki1","#ADFF2F", "greenyellow", "#00CD00", "green3", "#48D1CC", "mediumturquoise", "#007FFF", "blue"), space="Lab", bias=0.5)
+png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, ".png")),
+    height=2000, width=3000)
+op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
+plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp, "- BCR", i), box=FALSE)
+plot(rast, col=bluegreen.colors(15), zlim=c(0,MAX), axes=FALSE,
+    main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
+    smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
+par(op)
+dev.off()
 
 
 
