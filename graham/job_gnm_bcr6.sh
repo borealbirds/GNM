@@ -2,7 +2,7 @@
 #SBATCH --account=def-psolymos
 #SBATCH --nodes=2               # number of whole nodes
 #SBATCH --ntasks-per-node=32    # 32 cores on each node
-#SBATCH --mem=256000M           # --mem is per node --mem=0 use all ~3.9G mem per core
+#SBATCH --mem=0                 # --mem is per node --mem=0 use all ~3.9G mem per core
 #SBATCH --time=24:00:00         # time (HH:MM:SS)
 #SBATCH --job-name=bcr6
 #SBATCH --output=%x-%j.out
@@ -21,4 +21,4 @@ module load r/3.5.1
 export NODESLIST=$(echo $(srun hostname))
 
 # Run R script
-Rscript --vanilla gnm.R 6
+Rscript --vanilla gnm2.R 6

@@ -83,14 +83,16 @@ SPPBCR <- as.character(interaction(tmp$SPP, tmp$BCR, sep="-"))
 #if (interactive() || TEST)
 #    SPPBCR <- SPPBCR[1:2]
 
-DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
-DONE <- unique(c(DONE0, DONE))
-cat("OK\n* Summary so far:\n")
-table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2))
-
+DONE <- as.character(
+    sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L]))
+#DONE <- unique(c(DONE0, DONE))
+if (length(DONE) > 0) {
+    cat("OK\n* Summary so far:\n")
+    table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2))
+}
 TOGO <- setdiff(SPPBCR, DONE)
 
-run_brt2 <- function(RUN, SUB=NULL, RATE=0.001) {
+run_brt2 <- function(RUN, SUB=NULL, RATE=0.001, ntree=NULL) {
     ## parse input
     tmp <- strsplit(RUN, "-")[[1L]]
     spp <- tmp[1L]
@@ -113,13 +115,17 @@ run_brt2 <- function(RUN, SUB=NULL, RATE=0.001) {
         ## this is not bootstrap resampling
         ## just subset to reduce memory footprint
         DAT <- DAT[sample(nrow(DAT), SUB, prob=DAT$weights),]
-        cat("Sample size =", nrow(DAT), "\n")
     }
-    ntree <- NTREE[spp, BCR]
-    if (ntree == 0)
-        ntree <- 10000
-    out <- try(gbm::gbm(count ~ . + offset(offset),
-        data=DAT,
+    if (is.null(ntree)) {
+        ntree <- NTREE[spp, BCR]
+        if (ntree == 0)
+            ntree <- 1000
+    }
+    cat("\nFitting BRT for", spp, "in", BCR, "\n")
+    cat("    Sample size =", nrow(DAT), "\n")
+    cat("    N trees     =", ntree, "\n\n")
+    out <- try(gbm::gbm(DAT$count ~ . + offset(DAT$offset),
+        data=DAT[,-(1:3)],
         n.trees = ntree,
         interaction.depth = 3,
         shrinkage = RATE,
@@ -127,7 +133,9 @@ run_brt2 <- function(RUN, SUB=NULL, RATE=0.001) {
         weights = DAT$weights,
         distribution = "poisson",
         var.monotone = NULL,#rep(0, length(4:ncol(DAT))),
-        verbose = TRUE)
+        keep.data = FALSE,
+        verbose = TRUE,
+        n.cores = 1)
     )
     out
 }
@@ -136,16 +144,13 @@ cat("OK\n* Start running models:")
 set.seed(as.integer(Sys.time()))
 while (length(TOGO) > 0) {
     SET <- sample(TOGO)[seq_len(min(length(TOGO), length(cl)))]
-    cat("\n  -", length(TOGO), "more species to go -", date(), "... ")
+    cat("\n  -", length(TOGO), "more pieces to go -", date(), "... ")
     if (interactive())
         flush.console()
-    t0 <- proc.time()
-    #hhh <- run_brt(SET[1], SUB=1000)
-    res <- parLapply(cl=cl, X=SET, fun=run_brt2, 
-        TEST=interactive() || TEST, 
-        SUB=SUB,
-        RATE=0.001, 
-        n.trees=1000)
+    #system.time(hhh <- run_brt2("CAWA-BCR_6", ntree=100))
+    #res <- lapply(X=SET, fun=run_brt2, SUB=SUB, RATE=0.001, ntree = 100)
+    res <- parLapply(cl=cl, X=SET, fun=run_brt2, SUB=SUB, RATE=0.001,
+        ntree = if (interactive() || TEST) 100 else NULL)
     names(res) <- SET
     cat("OK")
     for (i in SET) {
@@ -154,7 +159,8 @@ while (length(TOGO) > 0) {
         save(out, file=paste0("out/", PROJ, "/", if (TEST) "00test_" else "", i, ".RData"))
         cat("OK")
     }
-    DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
+    DONE <- as.character(
+        sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L]))
     TOGO <- setdiff(SPPBCR, DONE)
 }
 
