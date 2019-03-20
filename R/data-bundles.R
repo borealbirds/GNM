@@ -1,3 +1,5 @@
+## This script pulls together the BAM pached db and the analysis bundles
+
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
 
 library(mefa4)

@@ -1,3 +1,5 @@
+## code used to buffer BCRs
+
 library(sf)
 w <-"G:/Boreal/NationalModelsV2/"
 setwd(w)

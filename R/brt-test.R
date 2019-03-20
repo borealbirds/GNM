@@ -1,3 +1,5 @@
+## collection of code snippets, not from prod
+
 library(mefa4)
 library(raster)
 library(gbm)

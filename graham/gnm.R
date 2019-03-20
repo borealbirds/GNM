@@ -21,6 +21,8 @@ if (!interactive()) {
 }
 cat("* Using BCR:\n")
 print(bcr)
+if (!is.null(SUB))
+    cat("* Sample size set to", SUB, "\n")
 
 ## test suite uses limited sets
 TEST <- FALSE
@@ -35,9 +37,6 @@ library(gbm)
 library(dismo)
 #source("~/repos/abmianalytics/birds/00-functions.R")
 
-cat("OK\n* Loading data on master ... ")
-load(file.path("data", fn))
-
 ## Create an array from the NODESLIST environnement variable
 if (interactive()) {
     nodeslist <- 2
@@ -48,6 +47,9 @@ if (interactive()) {
     cat("OK\n  Nodes list:\n")
     print(nodeslist)
 }
+
+cat("OK\n* Loading data on master ... ")
+load(file.path("data", fn))
 
 ## Create the cluster with the nodes name.
 ## One process per count of node name.
@@ -78,16 +80,18 @@ BCRlist <- paste0("BCR_", bcr)
 tmp <- expand.grid(SPP=SPP, BCR=BCRlist)
 SPPBCR <- as.character(interaction(tmp$SPP, tmp$BCR, sep="-"))
 
-
-
-DONE <- character(0)
+#DONE <- character(0)
 #if (interactive() || TEST)
 #    SPPBCR <- SPPBCR[1:2]
 
 DONE <- sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L])
+DONE <- unique(c(DONE0, DONE))
+cat("OK\n* Summary so far:\n")
+table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2))
+
 TOGO <- setdiff(SPPBCR, DONE)
 
-run_brt <- function(RUN, TRY=1, TEST=FALSE, SUB=NULL) {
+run_brt <- function(RUN, TRY=1, TEST=FALSE, SUB=NULL, RATE=0.001) {
     ## parse input
     tmp <- strsplit(RUN, "-")[[1L]]
     spp <- tmp[1L]
@@ -112,12 +116,12 @@ run_brt <- function(RUN, TRY=1, TEST=FALSE, SUB=NULL) {
             dd2[ss, c(cnf, CN[[BCR]])])
         if (!is.null(SUB)) {
             DAT$weights <- 1
+            SUB <- min(SUB, nrow(DAT))
             ## this is not bootstrap resampling
             ## just subset to reduce memory footprint
             DAT <- DAT[sample(nrow(DAT), SUB, prob=DAT$weights),]
             cat("Sample size =", nrow(DAT))
         }
-        RATE <- 0.001
         ## fit BRT
         out <- try(gbm.step(DAT,
             gbm.y = 1,
