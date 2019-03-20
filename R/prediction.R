@@ -21,6 +21,7 @@ load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
 STACK <- list()
 for (i in 4:14) {
     cat("\nLoading stack for BCR", i, "\n")
+    flush.console()
 
     pr <- stack(file.path(ROOT, "data", "stacks", paste0("bcr", i, "_1km.grd")))
     prc <- stack(file.path(ROOT, "data", "stacks", paste0("bcr", i, "cat_1km.grd")))
@@ -34,9 +35,12 @@ for (i in 4:14) {
 
     print(compare_sets(c(cnf, CN[[paste0("BCR_", i)]]), names(pr)))
 
+    #pr <- trim(pr)
     STACK[[paste0("BCR_", i)]] <- pr
 }
 rm(prc, pr)
+
+save(STACK, file=file.path(ROOT, "STACK.RData"))
 
 ## extracting model stats
 
@@ -203,88 +207,137 @@ save(NTREE, file=file.path(ROOT, "NTREE.RData"))
 
 ## now predicting
 
-predict_gbm <- function(brt, ppp, impute=0) {
-    if (inherits(brt, "try-error")) {
-        rp <- ppp[[1]]
-        values(rp)[!is.na(values(rp))] <- impute
-    } else {
-        ctb <- brt$contributions
-        pset <- names(ppp)
-        n <- length(values(ppp[[1]]))
-        nd <- matrix(0, n, length(pset))
-        colnames(nd) <- pset
-        for (i in pset) {
-            nd[,i] <- values(ppp[[i]])
-        }
+## libraries
+library(mefa4)
+library(gbm)
+library(raster)
 
-        notNA <- rowSums(is.na(nd)) == 0
-        nd <- as.data.frame(nd[notNA,,drop=FALSE])
-        nd$nalc <- as.factor(nd$nalc)
-        nd$lf <- as.factor(nd$lf)
-        nd$offset <- 0
-        nd$weights <- 1
-        z0 <- suppressWarnings(predict.gbm(brt, nd, type="response", n.trees=brt$n.trees))
-        z <- rep(NA, n)
-        z[notNA] <- z0
-        zz <- matrix(t(z), dim(ppp)[1], dim(ppp)[2], byrow=TRUE)
-        rp <- raster(x=zz, template=ppp)
-    }
-    rp
-}
-
+ROOT <- "d:/bam/BAM_data_v2019/gnm"
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
+#load(file.path(ROOT, "STACK.RData"))
 load(file.path(ROOT, "OK.RData"))
-
 SPP <- rownames(OK[rowSums(OK)==ncol(OK)])
 
+predict_gbm_data <- function(ppp) {
+    pset <- names(ppp)
+    n <- length(values(ppp[[1]]))
+    nd <- matrix(0, n, length(pset))
+    colnames(nd) <- pset
+    for (i in pset) {
+        nd[,i] <- values(ppp[[i]])
+    }
+    notNA <- rowSums(is.na(nd)) == 0
+    nd <- as.data.frame(nd[notNA,,drop=FALSE])
+    nd$nalc <- as.factor(nd$nalc)
+    nd$lf <- as.factor(nd$lf)
+    nd$offset <- 0
+    nd$weights <- 1
+    list(data=nd, n=n, subset=which(notNA), dim=dim(ppp))
+}
 
-spp <- "CAWA"
-PIECES <- list()
 t0 <- proc.time()
 for (i in 4:14) {
     gc()
     BCR <- paste0("BCR_", i)
-    cat("\n", spp, BCR)
+    cat("\n", BCR)
     flush.console()
-    ## load spp/bcr model object
-    e <- new.env()
-    tmp <- try(load(file.path(ROOT, "out", "gnm", paste0(spp, "-", BCR, ".RData")), envir=e))
-    #tmp <- try(load(file.path(ROOT, "out", "leftover", "ATSP-BCR_11.RData"), envir=e))
-    brt <- e$out
-    rm(e)
-
-    cat(" -", if (inherits(brt, "try-error")) NA else brt$n.trees)
-
-    ## predict
-    PIECES[[BCR]] <- predict_gbm(brt, STACK[[BCR]], 0)
+    ND <- predict_gbm_data(STACK[[BCR]])
+    save(ND, file=file.path(ROOT, paste0("STACK-ND-BCR_", i, ".RData")))
     cat(" @", round((proc.time() - t0)[3]/60, 2), "min")
 }
 
+ppp <- predict_gbm_data(STACK[[BCR]])
+pr <- predict_gbm(brt, ppp, STACK[[BCR]][[1]], 0)
 
-rast <- mosaic(
-    PIECES[['BCR_4']],
-    PIECES[['BCR_5']],
-    PIECES[['BCR_6']],
-    PIECES[['BCR_7']],
-    PIECES[['BCR_8']],
-    PIECES[['BCR_9']],
-    PIECES[['BCR_10']],
-    PIECES[['BCR_11']],
-    PIECES[['BCR_12']],
-    PIECES[['BCR_13']],
-    PIECES[['BCR_14']],
-    fun=mean)
+predict_gbm <- function(brt, ppp, r, impute=0) {
+    if (inherits(brt, "try-error")) {
+        rp <- r[[1]]
+        values(rp)[!is.na(values(rp))] <- impute
+    } else {
+        if (!("ROAD" %in% colnames(ppp$data)))
+            ppp$data$ROAD <- 0
+        z0 <- suppressWarnings(predict.gbm(brt, ppp$data, type="response", n.trees=brt$n.trees))
+        z <- rep(NA, ppp$n)
+        z[ppp$subset] <- z0
+        zz <- matrix(t(z), ppp$dim[1], ppp$dim[2], byrow=TRUE)
+        rp <- raster(x=zz, template=r)
+    }
+    rp
+}
 
-writeRaster(rast, file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, ".tif")))
 
-MAX <- 3 * cellStats(rast, 'mean')
+SPP <- colnames(yy)
+PROJ <- "gnm"
+#PROJ <- "roadfix"
+
+#spp <- "CAWA"
+for (spp in SPP) {
+    cat("\n\n")
+    PIECES <- list()
+    t0 <- proc.time()
+    for (i in 4:14) {
+        gc()
+        BCR <- paste0("BCR_", i)
+        cat("\n", spp, BCR)
+        flush.console()
+        ## load spp/bcr model object
+        e <- new.env()
+        tmp <- try(load(file.path(ROOT, "out", PROJ, paste0(spp, "-", BCR, ".RData")), envir=e))
+        brt <- e$out
+        rm(e)
+        ## preprocesses stack
+        load(file.path(ROOT, paste0("STACK-ND-BCR_", i, ".RData")))
+        cat(" -", if (inherits(brt, "try-error")) NA else brt$n.trees)
+        ## predict
+        PIECES[[BCR]] <- predict_gbm(brt, ND, STACK[[BCR]][[1]], 0)
+        cat(" @", round((proc.time() - t0)[3]/60, 2), "min")
+    }
+
+    rast <- mosaic(
+        PIECES[['BCR_4']],
+        PIECES[['BCR_5']],
+        PIECES[['BCR_6']],
+        PIECES[['BCR_7']],
+        PIECES[['BCR_8']],
+        PIECES[['BCR_9']],
+        PIECES[['BCR_10']],
+        PIECES[['BCR_11']],
+        PIECES[['BCR_12']],
+        PIECES[['BCR_13']],
+        PIECES[['BCR_14']],
+        fun=mean)
+
+    writeRaster(rast, file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")))
+}
+
+## making png maps
+library(rgdal)
+library(raster)
+
+ROOT <- "d:/bam/BAM_data_v2019/gnm"
 bluegreen.colors <- colorRampPalette(c("#FFFACD", "lemonchiffon","#FFF68F", "khaki1","#ADFF2F", "greenyellow", "#00CD00", "green3", "#48D1CC", "mediumturquoise", "#007FFF", "blue"), space="Lab", bias=0.5)
-png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, ".png")),
+
+BCR <- readOGR(dsn=file.path(ROOT, "data", "bcr"), "bcrfinallcc")
+PROV <- readOGR(dsn=file.path(ROOT, "data", "prov"), "province_state_line")
+
+spp <- "CAWA"
+rast <- raster(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")))
+
+## play with Lc
+#library(opticut)
+#lc <- lorenz(values(rast)[!is.na(values(rast))])
+#q <- quantile(lc, probs=c(0.05, 0.1, 0.2, 0.5, 0.99), type="L")
+#MAX <- q["50%"]
+MAX <- 3 * cellStats(rast, 'mean')
+png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".png")),
     height=2000, width=3000)
 op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
-plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp, "- BCR", i), box=FALSE)
+plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
 plot(rast, col=bluegreen.colors(15), zlim=c(0,MAX), axes=FALSE,
     main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
     smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
+plot(PROV, col="grey", add=TRUE)
+plot(BCR, add=TRUE)
 par(op)
 dev.off()
 
