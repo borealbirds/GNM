@@ -282,8 +282,8 @@ predict_gbm <- function(brt, ppp, r, impute=0) {
 SPP <- colnames(yy)
 #SPP <- rev(colnames(yy))
 
-PROJ <- "gnm"
-#PROJ <- "roadfix"
+#PROJ <- "gnm"
+PROJ <- "roadfix"
 
 #spp <- "CAWA"
 #spp <- "AMRO"
