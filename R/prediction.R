@@ -215,8 +215,6 @@ library(raster)
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
 load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
 #load(file.path(ROOT, "STACK.RData"))
-load(file.path(ROOT, "OK.RData"))
-SPP <- rownames(OK[rowSums(OK)==ncol(OK)])
 
 predict_gbm_data <- function(ppp) {
     pset <- names(ppp)
@@ -249,6 +247,19 @@ for (i in 4:14) {
 ppp <- predict_gbm_data(STACK[[BCR]])
 pr <- predict_gbm(brt, ppp, STACK[[BCR]][[1]], 0)
 
+## predict ---------------------------------
+
+library(mefa4)
+library(gbm)
+library(raster)
+ROOT <- "d:/bam/BAM_data_v2019/gnm"
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
+
+#STACK1 <- list()
+#for (i in 4:14) {
+#    STACK1[[paste0("BCR_", i)]] <- raster(file.path(ROOT, "data", "stacks", paste0("bcr", i, "_1km.grd")))
+#}
+
 predict_gbm <- function(brt, ppp, r, impute=0) {
     if (inherits(brt, "try-error")) {
         rp <- r[[1]]
@@ -265,49 +276,61 @@ predict_gbm <- function(brt, ppp, r, impute=0) {
     rp
 }
 
+#load(file.path(ROOT, "OK.RData"))
+#SPP <- rownames(OK)[rowSums(OK >= 0)==ncol(OK)]
 
 SPP <- colnames(yy)
+#SPP <- rev(colnames(yy))
+
 PROJ <- "gnm"
 #PROJ <- "roadfix"
 
 #spp <- "CAWA"
-for (spp in SPP) {
-    cat("\n\n")
-    PIECES <- list()
-    t0 <- proc.time()
-    for (i in 4:14) {
+#spp <- "AMRO"
+for (i in 4:14) {
+    r1 <- raster(file.path(ROOT, "data", "stacks", paste0("bcr", i, "_1km.grd")))
+    for (spp in SPP) {
         gc()
-        BCR <- paste0("BCR_", i)
-        cat("\n", spp, BCR)
-        flush.console()
-        ## load spp/bcr model object
-        e <- new.env()
-        tmp <- try(load(file.path(ROOT, "out", PROJ, paste0(spp, "-", BCR, ".RData")), envir=e))
-        brt <- e$out
-        rm(e)
-        ## preprocesses stack
-        load(file.path(ROOT, paste0("STACK-ND-BCR_", i, ".RData")))
-        cat(" -", if (inherits(brt, "try-error")) NA else brt$n.trees)
-        ## predict
-        PIECES[[BCR]] <- predict_gbm(brt, ND, STACK[[BCR]][[1]], 0)
-        cat(" @", round((proc.time() - t0)[3]/60, 2), "min")
+        fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
+        fout <- file.path(ROOT, "artifacts", spp, 
+            paste0("mosaic-", spp, "-BCR_", i, "-", PROJ, ".tif"))
+        if (!file.exists(fout0) && !file.exists(fout)) {
+            BCR <- paste0("BCR_", i)
+            cat("\n", spp, BCR)
+            flush.console()
+            ## load spp/bcr model object
+            e <- new.env()
+            tmp <- try(load(file.path(ROOT, "out", PROJ, paste0(spp, "-", BCR, ".RData")), envir=e))
+            brt <- e$out
+            rm(e)
+            ## preprocesses stack
+            load(file.path(ROOT, paste0("STACK-ND-BCR_", i, ".RData")))
+            cat(" -", if (inherits(brt, "try-error")) NA else brt$n.trees)
+            ## predict
+            rrr <- predict_gbm(brt, ND, r1, 0)
+            writeRaster(rrr, fout, overwrite=TRUE)
+        }
     }
+}
 
-    rast <- mosaic(
-        PIECES[['BCR_4']],
-        PIECES[['BCR_5']],
-        PIECES[['BCR_6']],
-        PIECES[['BCR_7']],
-        PIECES[['BCR_8']],
-        PIECES[['BCR_9']],
-        PIECES[['BCR_10']],
-        PIECES[['BCR_11']],
-        PIECES[['BCR_12']],
-        PIECES[['BCR_13']],
-        PIECES[['BCR_14']],
-        fun=mean)
-
-    writeRaster(rast, file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")))
+spp <- "AMRO"
+for (spp in SPP) {
+    fout <- file.path(ROOT, "artifacts", spp, 
+        paste0("mosaic-", spp, "-BCR_", 4:14, "-", PROJ, ".tif"))
+    r4 <- raster(fout[1])
+    r5 <- raster(fout[2])
+    r6 <- raster(fout[3])
+    r7 <- raster(fout[4])
+    r8 <- raster(fout[5])
+    r9 <- raster(fout[6])
+    r10 <- raster(fout[7])
+    r11 <- raster(fout[8])
+    r12 <- raster(fout[9])
+    r13 <- raster(fout[10])
+    r14 <- raster(fout[11])
+    rast <- mosaic(r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, fun=mean)
+    writeRaster(rast, file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")),
+        overwrite=TRUE)
 }
 
 ## making png maps
@@ -320,27 +343,34 @@ bluegreen.colors <- colorRampPalette(c("#FFFACD", "lemonchiffon","#FFF68F", "kha
 BCR <- readOGR(dsn=file.path(ROOT, "data", "bcr"), "bcrfinallcc")
 PROV <- readOGR(dsn=file.path(ROOT, "data", "prov"), "province_state_line")
 
-spp <- "CAWA"
-rast <- raster(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")))
-
-## play with Lc
+#spp <- "AMGO"
 #library(opticut)
-#lc <- lorenz(values(rast)[!is.na(values(rast))])
-#q <- quantile(lc, probs=c(0.05, 0.1, 0.2, 0.5, 0.99), type="L")
-#MAX <- q["50%"]
-MAX <- 3 * cellStats(rast, 'mean')
-png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".png")),
-    height=2000, width=3000)
-op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
-plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
-plot(rast, col=bluegreen.colors(15), zlim=c(0,MAX), axes=FALSE,
-    main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
-    smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
-plot(PROV, col="grey", add=TRUE)
-plot(BCR, add=TRUE)
-par(op)
-dev.off()
+for (spp in SPP) {
+    fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
+    if (file.exists(fout0)) {
+        cat(spp, "\n")
+        flush.console()
 
+        rast <- raster(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")))
+
+        ## play with Lc
+        #lc <- lorenz(values(rast)[!is.na(values(rast))])
+        #q <- quantile(lc, probs=c(0.05, 0.1, 0.2, 0.5, 0.8, 0.99), type="L")
+        #MAX <- q["80%"]
+        MAX <- 3 * cellStats(rast, 'mean')
+        png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".png")),
+            height=2000, width=3000)
+        op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
+        plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
+        plot(rast, col=bluegreen.colors(15), zlim=c(0,MAX), axes=FALSE,
+            main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
+            smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
+        plot(PROV, col="grey", add=TRUE)
+        plot(BCR, add=TRUE)
+        par(op)
+        dev.off()
+    }
+}
 
 
 
