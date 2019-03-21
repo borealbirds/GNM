@@ -252,8 +252,9 @@ pr <- predict_gbm(brt, ppp, STACK[[BCR]][[1]], 0)
 library(mefa4)
 library(gbm)
 library(raster)
-ROOT <- "d:/bam/BAM_data_v2019/gnm"
-load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
+#ROOT <- "d:/bam/BAM_data_v2019/gnm"
+ROOT <- "c:/p/tmp/gnm"
+system.time(load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData")))
 
 #STACK1 <- list()
 #for (i in 4:14) {
