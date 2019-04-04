@@ -249,17 +249,15 @@ pr <- predict_gbm(brt, ppp, STACK[[BCR]][[1]], 0)
 
 ## predict ---------------------------------
 
+## Done: 4, 5, 6, 7, 8,  9,  10,  11
+i <- 12 # this is BCR
+
 library(mefa4)
 library(gbm)
 library(raster)
 #ROOT <- "d:/bam/BAM_data_v2019/gnm"
 ROOT <- "c:/p/tmp/gnm"
-system.time(load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData")))
-
-#STACK1 <- list()
-#for (i in 4:14) {
-#    STACK1[[paste0("BCR_", i)]] <- raster(file.path(ROOT, "data", "stacks", paste0("bcr", i, "_1km.grd")))
-#}
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
 
 predict_gbm <- function(brt, ppp, r, impute=0) {
     if (inherits(brt, "try-error")) {
@@ -288,61 +286,68 @@ PROJ <- "roadfix"
 
 #spp <- "CAWA"
 #spp <- "AMRO"
-for (i in 4:14) {
-    r1 <- raster(file.path(ROOT, "data", "stacks", paste0("bcr", i, "_1km.grd")))
-    for (spp in SPP) {
-        gc()
-        fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
-        fout <- file.path(ROOT, "artifacts", spp, 
-            paste0("mosaic-", spp, "-BCR_", i, "-", PROJ, ".tif"))
-        if (!file.exists(fout0) && !file.exists(fout)) {
-            BCR <- paste0("BCR_", i)
-            cat("\n", spp, BCR)
-            flush.console()
-            ## load spp/bcr model object
-            e <- new.env()
-            tmp <- try(load(file.path(ROOT, "out", PROJ, paste0(spp, "-", BCR, ".RData")), envir=e))
-            brt <- e$out
-            rm(e)
-            ## preprocesses stack
-            load(file.path(ROOT, paste0("STACK-ND-BCR_", i, ".RData")))
-            cat(" -", if (inherits(brt, "try-error")) NA else brt$n.trees)
-            ## predict
-            rrr <- predict_gbm(brt, ND, r1, 0)
-            writeRaster(rrr, fout, overwrite=TRUE)
-        }
+
+r1 <- raster(file.path(ROOT, "data", "stacks", paste0("bcr", i, "_1km.grd")))
+load(file.path(ROOT, paste0("STACK-ND-BCR_", i, ".RData")))
+for (spp in SPP) {
+    gc()
+    fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
+    fout <- file.path(ROOT, "artifacts", spp,
+        paste0("mosaic-", spp, "-BCR_", i, "-", PROJ, ".tif"))
+    if (!file.exists(fout0) && !file.exists(fout)) {
+        BCR <- paste0("BCR_", i)
+        cat("\n", spp, BCR)
+        flush.console()
+        ## load spp/bcr model object
+        e <- new.env()
+        tmp <- try(load(file.path(ROOT, "out", PROJ, paste0(spp, "-", BCR, ".RData")), envir=e))
+        brt <- e$out
+        rm(e)
+        ## preprocesses stack
+        cat(" -", if (inherits(brt, "try-error")) NA else brt$n.trees)
+        ## predict
+        rrr <- predict_gbm(brt, ND, r1, 0)
+        writeRaster(rrr, fout, overwrite=TRUE)
     }
 }
 
 spp <- "AMRO"
 for (spp in SPP) {
-    fout <- file.path(ROOT, "artifacts", spp, 
+    fout <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
+    fin <- file.path(ROOT, "artifacts", spp,
         paste0("mosaic-", spp, "-BCR_", 4:14, "-", PROJ, ".tif"))
-    r4 <- raster(fout[1])
-    r5 <- raster(fout[2])
-    r6 <- raster(fout[3])
-    r7 <- raster(fout[4])
-    r8 <- raster(fout[5])
-    r9 <- raster(fout[6])
-    r10 <- raster(fout[7])
-    r11 <- raster(fout[8])
-    r12 <- raster(fout[9])
-    r13 <- raster(fout[10])
-    r14 <- raster(fout[11])
-    rast <- mosaic(r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, fun=mean)
-    writeRaster(rast, file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")),
-        overwrite=TRUE)
+    if (!file.exists(fout)) {
+		cat(spp, "\n")
+		flush.console()
+		r4 <- raster(fin[1])
+		r5 <- raster(fin[2])
+		r6 <- raster(fin[3])
+		r7 <- raster(fin[4])
+		r8 <- raster(fin[5])
+		r9 <- raster(fin[6])
+		r10 <- raster(fin[7])
+		r11 <- raster(fin[8])
+		r12 <- raster(fin[9])
+		r13 <- raster(fin[10])
+		r14 <- raster(fin[11])
+		rast <- mosaic(r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, fun=mean)
+		writeRaster(rast, fout, overwrite=TRUE)
+    }
 }
 
 ## making png maps
 library(rgdal)
 library(raster)
 
-ROOT <- "d:/bam/BAM_data_v2019/gnm"
+#ROOT <- "d:/bam/BAM_data_v2019/gnm"
+ROOT <- "c:/p/tmp/gnm"
+
 bluegreen.colors <- colorRampPalette(c("#FFFACD", "lemonchiffon","#FFF68F", "khaki1","#ADFF2F", "greenyellow", "#00CD00", "green3", "#48D1CC", "mediumturquoise", "#007FFF", "blue"), space="Lab", bias=0.5)
 
 BCR <- readOGR(dsn=file.path(ROOT, "data", "bcr"), "bcrfinallcc")
 PROV <- readOGR(dsn=file.path(ROOT, "data", "prov"), "province_state_line")
+LAKES <- readOGR(dsn=file.path(ROOT, "data", "lakes"), "lakes_lcc")
+LAKES <- spTransform(LAKES, proj4string(BCR))
 
 #spp <- "AMGO"
 #library(opticut)
@@ -367,12 +372,60 @@ for (spp in SPP) {
             main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
             smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
         plot(PROV, col="grey", add=TRUE)
+        plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
         plot(BCR, add=TRUE)
         par(op)
         dev.off()
+
+        col1 <- colorRampPalette(rev(c("#D73027","#FC8D59","#FEE090","#E0F3F8","#91BFDB","#4575B4")))(100)
+        op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
+        plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
+        plot(rast, col=col1, zlim=c(0,MAX), axes=FALSE,
+            main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
+            smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
+        plot(PROV, col="grey", add=TRUE)
+        plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
+        plot(BCR, add=TRUE)
+        par(op)
+
+
     }
 }
 
+## copying mosaice`d files
+for (spp in SPP) {
+    fi <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
+    fo <- file.path("d:/bam/BAM_data_v2019/gnm", "roadfix-mosaic", paste0("mosaic-", spp, "-", PROJ, ".tif"))
+    file.copy(fi, fo)
+}
+
+## bcr level maps
+i <- 6
+BCRi <- BCR[BCR@data$BCR == i,]
+
+for (spp in SPP) {
+
+    rast <- try(raster(file.path(ROOT, "artifacts", spp,
+        paste0("mosaic-", spp, "-BCR_", i, "-", PROJ, ".tif"))))
+    if (!inherits(rast, "try-error")) {
+
+        MAX <- 3 * cellStats(rast, 'mean')
+        png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-BCR_", i, "-", PROJ, ".png")),
+            height=2000, width=3000)
+        op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
+        plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
+        plot(rast, col=bluegreen.colors(15), zlim=c(0,MAX), axes=FALSE,
+            main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
+            smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
+        plot(PROV, col="grey", add=TRUE)
+        plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
+        plot(BCRi, add=TRUE)
+        par(op)
+        dev.off()
+    } else {
+        cat(spp, "\n")
+    }
+}
 
 
 t0 <- proc.time()
