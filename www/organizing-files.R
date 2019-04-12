@@ -1,8 +1,8 @@
 library(jsonlite)
 library(mefa4)
 
-#dir <- "d:/bam/BAM_data_v2019/gnm/www/"
-dir <- "~/GoogleWork/tmp/"
+dir <- "d:/bam/BAM_data_v2019/gnm/www/"
+#dir <- "~/GoogleWork/tmp/"
 
 out <- "~/repos/api/v4/"
 
@@ -76,12 +76,19 @@ sp2$previous <- c(NA, rownames(sp)[-nrow(sp2)])
 sp2[["next"]] <- c(rownames(sp)[-1], NA)
 
 
-fl <- list.files(dir)
+#fl <- list.files(dir)
 
 spp <- "AMCR"
+for (spp in rownames(sp2)) {
 
 fmap <- paste0(dir, "/ds/", spp, "_pred1km1.png")
 fdat <- paste0(dir, "/ds/", spp, "_densities.csv")
+
+#if (!file.exists(fmap))
+#    break
+#if (!file.exists(fdat))
+#    break
+
 
 omap <- paste0(out, "species/", spp, "/map.png")
 odat <- paste0(out, "species/", spp, "/index.json")
@@ -114,6 +121,7 @@ file.copy(fmap, omap)
 writeLines(toJSON(L, pretty=FALSE, rownames=FALSE),
     odat)
 
+}
 
 z <- x[!duplicated(x$BCR_NAME),]
 z <- z[order(z$BCR),]
