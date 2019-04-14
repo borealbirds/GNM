@@ -6,6 +6,8 @@ dir <- "d:/bam/BAM_data_v2019/gnm/www/"
 
 out <- "~/repos/api/v4/"
 
+## species info
+if (FALSE) {
 e <- new.env()
 load("d:/bam/BAM_data_v2019/gnm/data/BAMdb-GNMsubset-2019-03-01.RData", envir=e)
 
@@ -20,11 +22,12 @@ sp$combo <- paste0(sp$common, " (", sp$scientific, ")")
 writeLines(toJSON(list(data=sp),
     pretty=FALSE, rownames=FALSE),
     paste0(out, "species/index.json"))
+}
 
 sp <- fromJSON(readLines(paste0(out, "species/index.json")))$data
 rownames(sp) <- sp$id
 
-lc <- c("Temperate or sub-polar needleleaf forest"=1,
+lcl <- c("Temperate or sub-polar needleleaf forest"=1,
     "Sub-polar taiga needleleaf fores"=2,
     "Temperate or sub-polar broadleaf deciduous"=5,
     "Mixed Forest"=6,
@@ -32,6 +35,16 @@ lc <- c("Temperate or sub-polar needleleaf forest"=1,
     "Temperate or sub-polar grassland"=10,
     "Sub-polar or polar shrubland-lichen-moss"=11,
     "Sub-polar or polar grassland-lichen-moss"=12,
+    "Wetland"=14,
+    "Cropland"=15)
+lc <- c("Conifer"=1,
+    "Taiga Conifer"=2,
+    "Deciduous"=5,
+    "Mixedwood"=6,
+    "Shrub"=8,
+    "Grass"=10,
+    "Arctic Shrub"=11,
+    "Arctic Grass"=12,
     "Wetland"=14,
     "Cropland"=15)
 
@@ -64,11 +77,10 @@ bcr$BCR_NALC <- as.factor(paste0(bcr$BCR, "_", bcr$nalc))
 #A <- as.matrix(Xtab(area ~ BCR + nalc, bcr))
 
 CN <- c("Area", "Nmean", "NQ5", "NQ50", "NQ95")
+CN2 <- c("Area", "Nmean")
 df <- function(x) {
     x$Dmean <- x$Nmean / x$Area
-    x$DQ5 <- x$NQ5 / (100 * x$Area)
-    x$DQ50 <- x$NQ50 / (100 * x$Area)
-    x$DQ95 <- x$NQ95 / (100 * x$Area)
+#    x$DQ50 <- x$NQ50 / (100 * x$Area)
     x
 }
 sp2 <- sp
@@ -81,16 +93,13 @@ sp2[["next"]] <- c(rownames(sp)[-1], NA)
 spp <- "AMCR"
 for (spp in rownames(sp2)) {
 
-fmap <- paste0(dir, "/ds/", spp, "_pred1km1.png")
-fdat <- paste0(dir, "/ds/", spp, "_densities.csv")
-
-#if (!file.exists(fmap))
-#    break
-#if (!file.exists(fdat))
-#    break
+fmap1 <- paste0(dir, "/ds2/", spp, "_pred1km1.png")
+fmap2 <- paste0(dir, "/ds2/", spp, "_pred1km2.png")
+fdat <- paste0(dir, "/ds2/", spp, "_densities.csv")
 
 
-omap <- paste0(out, "species/", spp, "/map.png")
+omap1 <- paste0(out, "species/", spp, "/map.png")
+omap2 <- paste0(out, "species/", spp, "/mapwdet.png")
 odat <- paste0(out, "species/", spp, "/index.json")
 
 x <- read.csv(fdat)
@@ -104,21 +113,66 @@ x$NQ5 <- round(2 * 100 * x$Q5 * x$Area)
 x$NQ50 <- round(2 * 100 * x$Q50 * x$Area)
 x$NQ95 <- round(2 * 100 * x$Q95 * x$Area)
 
-CAN <- df(aggregate(x[,CN], list(id=x$spec), sum))
-LCC <- df(aggregate(x[,CN], list(nalc=as.character(x$nalc)), sum))
-BCR <- df(aggregate(x[,CN], list(bcr=as.character(x$BCR)), sum))
+
+CAN <- aggregate(x[,CN2], list(bcr=rep("Canada", nrow(x))), sum)
+CAN$Dmean <- CAN$Nmean / (100 * CAN$Area)
+CAN
+BCR <- df(aggregate(x[,CN2], list(bcr=x$BCR), sum))
+BCR$Dmean <- BCR$Nmean / (100 * BCR$Area)
+#BCR$bcrname <- paste(BCR$bcr, factor(names(bc), names(bc)))[match(BCR$bcr, bc)]
+BCR
+LCC <- aggregate(x[,CN2], list(nalc=x$nalc), sum)
+LCC$Dmean <- LCC$Nmean / (100 * LCC$Area)
+#LCC[["DQ5"]] <- LCC$NQ5 / (100 * LCC$Area)
+#LCC[["DQ50"]] <- LCC$NQ50 / (100 * LCC$Area)
+#LCC[["DQ95"]] <- LCC$NQ95 / (100 * LCC$Area)
+#LCC$nalcname <- paste(LCC$nalc, factor(names(lc), names(lc)))[match(LCC$nalc, lc)]
+LCC
+
+tmp <- expand.grid(bcr=BCR$bcr, nalc=LCC$nalc)
+tmp$bcrnalc <- paste0(tmp$bcr, "_", tmp$nalc)
+
+bybcr <- data.frame(tmp, x[match(tmp$bcrnalc, x$BCR_NALC),CN])
+bybcr[is.na(bybcr)] <- 0
+summary(bybcr)
+bybcr$Dmean <- bybcr$Nmean / (100 * bybcr$Area)
+bybcr[["DQ5"]] <- bybcr$NQ5 / (100 * bybcr$Area)
+bybcr[["DQ50"]] <- bybcr$NQ50 / (100 * bybcr$Area)
+bybcr[["DQ95"]] <- bybcr$NQ95 / (100 * bybcr$Area)
+
+#bybcr <- lapply(4:14, function(z) bybcr[bybcr$bcr == z, ])
+
+nbybcr <- as.matrix(Xtab(Nmean ~ BCR + nalc, x))
+abybcr <- as.matrix(Xtab(Area ~ BCR + nalc, x))
+dbybcr <- nbybcr / abybcr
+dbybcr[is.na(dbybcr)] <- 0
+
+table(x$nalc,x$BCR)
 
 L <- list(data=list(
     species=as.list(sp2[spp,]),
-    national=list(total=as.list(CAN),
-    nalc=as.list(LCC),
-    bcr=as.list(BCR))))
-#toJSON(L, pretty=TRUE, rownames=FALSE)
+    bcr=paste(bc, names(bc)),
+    nalc=paste(lc, names(lc)),
+    popsize=list(
+        columns=c("BCR", "Area", "Nmean", "Dmean"),
+        ntotal=c(0, unlist(CAN[,-1])),
+        nbybcr=as.matrix(BCR)
+    ),
+    habitat=list(
+        columns=colnames(dbybcr),
+        rownames=rownames(dbybcr),
+        dbynalc=dbybcr
+    )
+))
+
+
+toJSON(L, pretty=TRUE, rownames=FALSE)
 
 if (!dir.exists(paste0(out, "species/", spp)))
     dir.create(paste0(out, "species/", spp))
-file.copy(fmap, omap)
-writeLines(toJSON(L, pretty=FALSE, rownames=FALSE),
+#file.copy(fmap1, omap1)
+#file.copy(fmap2, omap2)
+writeLines(toJSON(L, pretty=FALSE, rownames=FALSE, dataframe="rows"),
     odat)
 
 }
