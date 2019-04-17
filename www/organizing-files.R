@@ -75,7 +75,7 @@ sp2$previous <- c(NA, rownames(sp)[-nrow(sp2)])
 sp2[["next"]] <- c(rownames(sp)[-1], NA)
 
 
-spp <- "AMCR"
+spp <- "ALFL"
 
 ## figures
 for (spp in rownames(sp2)) {
@@ -91,9 +91,9 @@ oplot <- paste0(out, "species/", spp, "/dbynalc.png")
 
 if (!dir.exists(paste0(out, "species/", spp)))
     dir.create(paste0(out, "species/", spp))
-file.copy(fmap1, omap1)
-file.copy(fmap2, omap2)
-file.copy(fplot, oplot)
+file.copy(fmap1, omap1, overwrite=TRUE)
+file.copy(fmap2, omap2, overwrite=TRUE)
+file.copy(fplot, oplot, overwrite=TRUE)
 
 }
 
