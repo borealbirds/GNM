@@ -24,21 +24,24 @@ for (i in 4:14) {
     flush.console()
 
     pr <- stack(file.path(ROOT, "data", "stacks", paste0("bcr", i, "_1km.grd")))
-    prc <- stack(file.path(ROOT, "data", "stacks", paste0("bcr", i, "cat_1km.grd")))
+    #prc <- stack(file.path(ROOT, "data", "stacks", paste0("bcr", i, "cat_1km.grd")))
+    prc <- stack(file.path(ROOT, "data", "_new", "cat2", paste0("bcr", i, "cat_1km.grd")))
 
-    names(prc) <- c("bcr", "nalc", "lf")
+    #names(prc) <- c("bcr", "nalc", "lf")
     prc[["nalc"]] <- as.factor(prc[["nalc"]])
     prc[["lf"]] <- as.factor(prc[["lf"]])
     pr <- pr[[which(names(pr) != "bcr")]]
     prc <- prc[[which(names(prc) != "bcr")]]
     pr <- addLayer(pr, prc)
 
-    print(compare_sets(c(cnf, CN[[paste0("BCR_", i)]]), names(pr)))
+    print(compare_sets(c(cnf, CN[[paste0("BCR_", i)]]), names(pr))) # diff is ROAD
 
     #pr <- trim(pr)
     STACK[[paste0("BCR_", i)]] <- pr
 }
 rm(prc, pr)
+
+table(values(STACK[["BCR_6"]][["nalc"]]), useNA="a")
 
 save(STACK, file=file.path(ROOT, "STACK.RData"))
 
@@ -255,8 +258,8 @@ i <- 12 # this is BCR
 library(mefa4)
 library(gbm)
 library(raster)
-#ROOT <- "d:/bam/BAM_data_v2019/gnm"
-ROOT <- "c:/p/tmp/gnm"
+ROOT <- "d:/bam/BAM_data_v2019/gnm"
+#ROOT <- "c:/p/tmp/gnm"
 load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
 
 predict_gbm <- function(brt, ppp, r, impute=0) {
@@ -286,14 +289,16 @@ PROJ <- "roadfix"
 
 #spp <- "CAWA"
 #spp <- "AMRO"
+spp <- "OSFL"
 
 r1 <- raster(file.path(ROOT, "data", "stacks", paste0("bcr", i, "_1km.grd")))
 load(file.path(ROOT, paste0("STACK-ND-BCR_", i, ".RData")))
+table(ND$data$nalc, useNA="a")
 for (spp in SPP) {
     gc()
     fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
     fout <- file.path(ROOT, "artifacts", spp,
-        paste0("mosaic-", spp, "-BCR_", i, "-", PROJ, ".tif"))
+        paste0("mosaic-", spp, "-BCR_", i, "-", PROJ, "-nalcfix.tif"))
     if (!file.exists(fout0) && !file.exists(fout)) {
         BCR <- paste0("BCR_", i)
         cat("\n", spp, BCR)
@@ -313,9 +318,9 @@ for (spp in SPP) {
 
 spp <- "AMRO"
 for (spp in SPP) {
-    fout <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
+    fout <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, "-nalcfix.tif"))
     fin <- file.path(ROOT, "artifacts", spp,
-        paste0("mosaic-", spp, "-BCR_", 4:14, "-", PROJ, ".tif"))
+        paste0("mosaic-", spp, "-BCR_", 4:14, "-", PROJ, "-nalcfix.tif"))
     if (!file.exists(fout)) {
 		cat(spp, "\n")
 		flush.console()
@@ -339,8 +344,8 @@ for (spp in SPP) {
 library(rgdal)
 library(raster)
 
-#ROOT <- "d:/bam/BAM_data_v2019/gnm"
-ROOT <- "c:/p/tmp/gnm"
+ROOT <- "d:/bam/BAM_data_v2019/gnm"
+#ROOT <- "c:/p/tmp/gnm"
 
 bluegreen.colors <- colorRampPalette(c("#FFFACD", "lemonchiffon","#FFF68F", "khaki1","#ADFF2F", "greenyellow", "#00CD00", "green3", "#48D1CC", "mediumturquoise", "#007FFF", "blue"), space="Lab", bias=0.5)
 
@@ -352,20 +357,23 @@ LAKES <- spTransform(LAKES, proj4string(BCR))
 #spp <- "AMGO"
 #library(opticut)
 for (spp in SPP) {
-    fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
+    fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, "-nalcfix.tif"))
     if (file.exists(fout0)) {
         cat(spp, "\n")
         flush.console()
 
         rast <- raster(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")))
+#        rast <- raster(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, "-nalcfix.tif")))
 
         ## play with Lc
         #lc <- lorenz(values(rast)[!is.na(values(rast))])
         #q <- quantile(lc, probs=c(0.05, 0.1, 0.2, 0.5, 0.8, 0.99), type="L")
         #MAX <- q["80%"]
-        MAX <- 3 * cellStats(rast, 'mean')
+        MAX <- cellStats(rast, 'mean')
         png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".png")),
             height=2000, width=3000)
+#        png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, "-nalcfix.png")),
+#            height=2000, width=3000)
         op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
         plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
         plot(rast, col=bluegreen.colors(15), zlim=c(0,MAX), axes=FALSE,
