@@ -17,6 +17,7 @@ library(mefa4)
 library(intrval)
 library(sf)
 library(sp)
+library(raster)
 #' Load data and set up coordinates
 load(file.path(ROOT, "data", "BAMdb-patched-2019-06-04.RData"))
 lcc_crs <- "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=0 +lon_0=-95 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs"
@@ -87,6 +88,8 @@ yy <- yy[ss,]
 off <- off[ss,]
 sf <- sf[ss,]
 c(sum(is.na(dd)), sum(is.na(dd2)), sum(is.na(off)), sum(is.na(yy)))
+#' Use ROAD layer from `dd2` not BBS or not from `dd`
+dd$ROAD <- NULL
 #' Drop species with 0 detections after subsets
 any(colSums(yy) == 0)
 yy <- yy[,colSums(yy) > 0]
@@ -96,11 +99,16 @@ sort(colSums(yy))
 bcrsu <- st_read(file.path(ROOT, "data", "predictors", "subunits", "BCRSubunits.shp"))
 o <- st_join(sf, bcrsu, join = st_intersects)
 dd$bcrsu <- o$BCR
-table(dd$bcrsu)
-#' Use ROAD layer from `dd2` not BBS or not from `dd`
-dd$ROAD <- NULL
-
-
+u <- c(4, 5, 60, 61, 70, 71, 80, 81, 82, 83, 9, 10, 11, 12, 13, 14)
+dd$bcrsu <- factor(dd$bcrsu, u)
+table(dd$bcrsu, useNA="a")
+#' Identify points within the 100km buffers
+for (i in u){
+    ri <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", i, "all_1km.gri")), 1)
+    oi <- extract(ri, sf)
+    dd[[paste0("BCR_", i)]] <- ifelse(is.na(oi), 0L, 1L)
+}
+#'
 
 #' Evaluate predictor sets based on hist, SD, etc
 get_cn <- function(z, rmax=0.9) {
@@ -130,45 +138,19 @@ get_cn <- function(z, rmax=0.9) {
     }
     union(as.character(cr3[,1]), as.character(cr3[,2]))
 }
-
-## factor
-cnf <- colnames(dd2)[!sapply(dd2, is.numeric)]
-
-#z <- as.matrix(dd2[,sapply(dd2, is.numeric)])
-#cnn <- get_cn(z)
-
+#' `CN` collects column names to be used in BRTs
+#' includes factors and ROAD regardless of SD and correlation
 CN <- list()
-for (i in 4:14) {
+for (i in u) {
     cat("BCR", i, "\n")
     BCR <- paste0("BCR_", i)
     z <- as.matrix(dd2[dd[,BCR] == 1L, sapply(dd2, is.numeric)])
-    #MEAN <- colMeans(z)
     SD <- apply(z, 2, sd)
-    z[,SD > 0]
-    CN[[BCR]] <- get_cn(z[,SD > 0])
+    CN[[BCR]] <- unique(c("nalc", "lf", "ROAD", get_cn(z[,SD > 0])))
 }
-
 sapply(CN, length)
-
-
-
-
-#' BCR units/subunits
-u <- c(4, 5, 60, 61, 70, 71, 80, 81, 82, 9, 10, 11, 12, 13, 14)
-
-#i <- 4
-for (i in u) {
-    cat("\n\nSubunit", i, "\n\n")
-    bcri <- st_read(file.path(ROOT, "data", "subunits", paste0("bcr",i,"all_1km.shp")))
-    ddi <- st_intersection(sf, bcri)
-    dd[[paste0("BCR_", i)]] <- ifelse(rownames(dd) %in% rownames(ddi), 1L, 0L)
-}
-
-
-
-
-## weights
-
+#'
+#' Calculating weights
 xy <- st_coordinates(sf)
 bb <- bbox(xy)
 r <- raster(
@@ -186,25 +168,16 @@ ni <- extract(sr25, xy)
 ni[is.na(ni)] <- 1
 wi <- 1/ni
 nsub <- ceiling(sum(sapply(sort(unique(ni)), function(z) sum(ni == z)/z)))
-
 dd$ni <- ni
 dd$wi <- wi
-
-save(dd, dd2, yy, off, spt, cnf, CN,
-    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
-#load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
-
-
-fullBCRlist <- names(sort(colSums(dd[,paste0("BCR_", 4:14)])))
-
-b <- as(as.matrix(dd[,paste0("BCR_", 4:14)]), "dgCMatrix")
+#' Calculating set of species-subunit combination with >0 sums
+fullBCRlist <- names(sort(colSums(dd[,paste0("BCR_", u)])))
+b <- as(as.matrix(dd[,paste0("BCR_", u)]), "dgCMatrix")
 b <- b[,fullBCRlist]
-
 yy01 <- yy
 yy01[yy>0] <- 1
 detbcr <- t(sapply(colnames(yy), function(z) colSums(yy01[,z] * b)))
 attr(detbcr, "nbcr") <- colSums(b)
-
 SPPBCR <- NULL
 for (i in colnames(detbcr)) {
     for (j in rownames(detbcr)) {
@@ -212,14 +185,7 @@ for (i in colnames(detbcr)) {
             SPPBCR <- c(SPPBCR, paste0(j, "-", i))
     }
 }
-
-
-save(dd, dd2, yy, off, spt, cnf, cnn, CN, nsub, detbcr, SPPBCR,
+#'
+#' Save
+save(dd, dd2, yy, off, spt, u, CN, nsub, detbcr, SPPBCR,
     file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
-
-
-f <- function(x)
-    ceiling(sum(sapply(sort(unique(dd$ni[x>0])), function(z) sum(dd$ni[x>0] == z)/z)))
-h <- data.frame(n=colSums(dd[,paste0("BCR_", 4:14)]),
-    neff=apply(dd[,paste0("BCR_", 4:14)], 2, f))
-h$p <- h$neff/h$n
