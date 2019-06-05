@@ -67,13 +67,20 @@ stopifnot(all(colnames(dd2001)==colnames(dd2011)))
 dd2 <- dd2001 # use 2001 version for -2005 data
 dd2[dd$YEAR >= 2006,] <- dd2011[dd$YEAR >= 2006,] # use 2011 version for 2006- data
 #' Sanity checks
-dd2$lf[dd2$lf < 1] <- 0
+#' Land facets: https://adaptwest.databasin.org/pages/adaptwest-landfacets
+dd2$lf[dd2$lf < 1] <- NA
 dd2$lf <- as.factor(as.integer(dd2$lf))
+table(dd2$lf, useNA="a")
 #' 0=no data, 18=water, 19=snow & ice
 dd2$nalc[dd2$nalc %)(% c(1, 17)] <- NA
 dd2$nalc <- as.factor(dd2$nalc)
+table(dd2$nalc, useNA="a")
+#' Check some variables: need to drop RH, PAS, Eref
+dd2$RH <- NULL
+dd2$PAS <- NULL
+dd2$Eref <- NULL
 #' Subsets
-ss <- rowSums(is.na(dd2)) == 0
+ss <- rownames(dd2)[rowSums(is.na(dd2)) == 0]
 dd <- dd[ss,]
 dd2 <- dd2[ss,]
 yy <- yy[ss,]
@@ -88,6 +95,12 @@ sort(colSums(yy))
 #' Assign BCR subunits to surveys
 bcrsu <- st_read(file.path(ROOT, "data", "predictors", "subunits", "BCRSubunits.shp"))
 o <- st_join(sf, bcrsu, join = st_intersects)
+dd$bcrsu <- o$BCR
+table(dd$bcrsu)
+#' Use ROAD layer from `dd2` not BBS or not from `dd`
+dd$ROAD <- NULL
+
+
 
 #' Evaluate predictor sets based on hist, SD, etc
 get_cn <- function(z, rmax=0.9) {
