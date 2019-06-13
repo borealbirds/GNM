@@ -188,4 +188,4 @@ for (i in colnames(detbcr)) {
 #'
 #' Save
 save(dd, dd2, yy, off, spt, u, CN, nsub, detbcr, SPPBCR,
-    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
+    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-05.RData"))
