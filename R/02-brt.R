@@ -93,8 +93,7 @@ run_brt2 <- function(RUN, SUB=NULL, RATE=0.001, ntree=1000) {
         var.monotone = NULL,#rep(0, length(4:ncol(DAT))),
         keep.data = FALSE,
         verbose = TRUE,
-        n.cores = 1)
-    )
+        n.cores = 1))
     out
 }
 
@@ -103,7 +102,9 @@ for (i in TOGO) {
     gc()
     cat("\n  -", length(TOGO), "more pieces to go -", date(), "... ")
     flush.console()
-    out <- run_brt1(i)
+    out <- run_brt1(i, RATE=0.001)
+    if (is.null(out) || inherits(out, "try-error"))
+        out <- run_brt1(i, RATE=0.0001)
     cat("\n    > Saving:", i, "... ")
     saveRDS(out, file=file.path(ROOT, "out", PROJ, paste0(i, ".rds")))
     cat("OK")
