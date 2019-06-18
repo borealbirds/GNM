@@ -22,17 +22,6 @@ if (length(DONE) > 0) {
     data.frame(table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2)))
 }
 
-for (i in u) {
-    cat("\nLoading stack for BCR", i, "\n")
-    flush.console()
-    gc()
-
-    pr <- stack(file.path(ROOT, "data", "subunits", paste0("bcr", i, "all_1km.grd")))
-    rr <- raster(file.path(ROOT, "data", "subunits", "road", paste0("bcr", i, "road_1km.grd")))
-    #pr[["nalc"]] <- as.factor(pr[["nalc"]])
-    #pr[["lf"]] <- as.factor(pr[["lf"]])
-    try(pr <- addLayer(pr, rr))
-}
 
 ## prepare stacks
 for (i in u) {
@@ -41,25 +30,10 @@ for (i in u) {
     gc()
 
     pr <- stack(file.path(ROOT, "data", "subunits", paste0("bcr", i, "all_1km.grd")))
-    rr <- raster(file.path(ROOT, "data", "subunits", "road", paste0("bcr", i, "road_1km.grd")))
-    #pr[["nalc"]] <- as.factor(pr[["nalc"]])
-    #pr[["lf"]] <- as.factor(pr[["lf"]])
-    if (!compareRaster(pr, rr, stopiffalse=FALSE)) {
-        rr <- resample(rr, pr, "ngb")
-    }
-    pr <- addLayer(pr, rr)
-    names(pr)[length(names(pr))] <- "ROAD"
 
     print(compare_sets(CN[[paste0("BCR_", i)]], names(pr))) # diff is ROAD
 
-    #pr <- trim(pr)
-
-    #STACK[[paste0("BCR_", i)]] <- pr
-
-    #pset <- names(pr)
     pset <- CN[[paste0("BCR_", i)]]
-
-#    pset <- pset[pset != "ROAD"]
 
     n <- length(values(pr[[1]]))
     nd <- matrix(0, n, length(pset))
@@ -72,8 +46,6 @@ for (i in u) {
     nd <- as.data.frame(nd[notNA,,drop=FALSE])
     nd$nalc <- as.factor(nd$nalc)
     nd$lf <- as.factor(nd$lf)
-
-#    nd$ROAD <- 0
 
     nd$offset <- 0L
     nd$weights <- 1L
