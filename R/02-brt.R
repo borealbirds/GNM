@@ -4,8 +4,8 @@ library(gbm)
 library(dismo)
 
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
-PROJ <- "run1"
-load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-05.RData"))
+PROJ <- "run2"
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-20.RData"))
 
 #SPP <- colnames(yy)
 #SPP <- c("ALFL", "AMRO", "BOCH", "BTNW", "CAWA",
@@ -24,6 +24,7 @@ if (length(DONE) > 0) {
 TOGO <- setdiff(SPPBCRss, DONE)
 
 
+#RUN <- "OSFL-BCR_60"
 run_brt1 <- function(RUN, SUB=NULL, RATE=0.001) {
     ## parse input
     tmp <- strsplit(RUN, "-")[[1L]]
@@ -39,6 +40,7 @@ run_brt1 <- function(RUN, SUB=NULL, RATE=0.001) {
         count=as.numeric(yy[ss, spp]),
         offset=off[ss, spp],
         weights=dd$wi[ss],
+        ARU=dd$ARU[ss], # ARU added here, but not as layer
         dd2[ss, CN[[BCR]]])
     if (!is.null(SUB)) {
         DAT$weights <- 1
@@ -71,6 +73,7 @@ run_brt2 <- function(RUN, SUB=NULL, RATE=0.001, ntree=1000) {
         count=as.numeric(yy[ss, spp]),
         offset=off[ss, spp],
         weights=dd$wi[ss],
+        ARU=dd$ARU[ss], # ARU added here, but not as layer
         dd2[ss, CN[[BCR]]])
     if (!is.null(SUB)) {
         DAT$weights <- 1

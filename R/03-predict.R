@@ -56,64 +56,34 @@ for (i in u) {
 
 ## need to set NALC land cover types not used in model (snow/ice) to 0
 
-predict_gbm_data <- function(ppp) {
-    pset <- names(ppp)
-    n <- length(values(ppp[[1]]))
-    nd <- matrix(0, n, length(pset))
-    colnames(nd) <- pset
-    for (i in pset) {
-        nd[,i] <- values(ppp[[i]])
-    }
-    notNA <- rowSums(is.na(nd)) == 0
-    nd <- as.data.frame(nd[notNA,,drop=FALSE])
-    nd$nalc <- as.factor(nd$nalc)
-    nd$lf <- as.factor(nd$lf)
-
-    nd$ROAD <- 0
-
-    nd$offset <- 0
-    nd$weights <- 1
-    list(data=nd, n=n, subset=which(notNA), dim=dim(ppp))
-}
-
-t0 <- proc.time()
-for (i in 4:14) {
-    gc()
-    BCR <- paste0("BCR_", i)
-    cat("\n", BCR)
-    flush.console()
-    ND <- predict_gbm_data(STACK[[BCR]])
-    save(ND, file=file.path(ROOT, paste0("STACK-ND-BCR_", i, ".RData")))
-    cat(" @", round((proc.time() - t0)[3]/60, 2), "min")
-}
-
-ppp <- predict_gbm_data(STACK[[BCR]])
-pr <- predict_gbm(brt, ppp, STACK[[BCR]][[1]], 0)
-
 ## predict ---------------------------------
 
-## Done: 4, 5, 6, 7, 8,  9,  10,  11
-i <- 12 # this is BCR
+BCR <- 60 # this is BCR
 
 library(mefa4)
 library(gbm)
 library(raster)
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
 #ROOT <- "c:/p/tmp/gnm"
-load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-03-01.RData"))
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-20.RData"))
 
-predict_gbm <- function(brt, ppp, r, impute=0) {
+predict_gbm <- function(brt, ND, r1, impute=0) {
     if (inherits(brt, "try-error")) {
-        rp <- r[[1]]
+        rp <- r1[[1]]
         values(rp)[!is.na(values(rp))] <- impute
     } else {
-        if (!("ROAD" %in% colnames(ppp$data)))
-            ppp$data$ROAD <- 0
-        z0 <- suppressWarnings(predict.gbm(brt, ppp$data, type="response", n.trees=brt$n.trees))
-        z <- rep(NA, ppp$n)
-        z[ppp$subset] <- z0
-        zz <- matrix(t(z), ppp$dim[1], ppp$dim[2], byrow=TRUE)
-        rp <- raster(x=zz, template=r)
+        if (!("ROAD" %in% colnames(ND$data)))
+            ND$data$ROAD <- 0
+        if (!("ARU" %in% colnames(ND$data)))
+            ND$data$ARU <- 0
+        z0 <- suppressWarnings(predict.gbm(brt, ND$data, type="response", n.trees=brt$n.trees))
+        ## dealing with snow/ice
+        z0[ND$data$nalc %in% c(0, 18, 19)] <- impute
+        ## expand to extent
+        z <- rep(NA, ND$n)
+        z[ND$subset] <- z0
+        zz <- matrix(t(z), ND$dim[1], ND$dim[2], byrow=TRUE)
+        rp <- raster(x=zz, template=r1)
     }
     rp
 }
@@ -124,16 +94,26 @@ predict_gbm <- function(brt, ppp, r, impute=0) {
 SPP <- colnames(yy)
 #SPP <- rev(colnames(yy))
 
-#PROJ <- "gnm"
-PROJ <- "roadfix"
+PROJ <- "run1"
 
 #spp <- "CAWA"
 #spp <- "AMRO"
 spp <- "OSFL"
 
-r1 <- raster(file.path(ROOT, "data", "stacks", paste0("bcr", i, "_1km.grd")))
-load(file.path(ROOT, paste0("STACK-ND-BCR_", i, ".RData")))
+
+r1 <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", BCR, "all_1km.grd")))
+ND <- readRDS(file.path(ROOT, paste0("STACK-ND-BCR_", BCR, ".rds")))
+ND$data$ARU <- 0
+#' 0=no data, 18=water, 19=snow & ice ==> set to D=0
 table(ND$data$nalc, useNA="a")
+table(ND$data$lf, useNA="a")
+
+
+brt <- readRDS(file.path(ROOT, "out", PROJ, paste0(spp, "-BCR_", BCR, ".rds")))
+rrr <- predict_gbm(brt, ND, r1, 0)
+writeRaster(rrr, fout, overwrite=TRUE)
+
+
 for (spp in SPP) {
     gc()
     fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))

@@ -186,6 +186,13 @@ for (i in colnames(detbcr)) {
     }
 }
 #'
+#' Dealing with ARU and BBS data
+dd$isBBS <- startsWith(rownames(dd), "BBSAB")
+table(dd2[,"ROAD"])
+dd2[dd$isBBS,"ROAD"] <- 1
+table(dd2[,"ROAD"])
+dd$ARU <- ifelse(startsWith(rownames(dd), "BU_"), 1, 0) # BU and WildTrax
+#'
 #' Save
 save(dd, dd2, yy, off, spt, u, CN, nsub, detbcr, SPPBCR,
-    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-05.RData"))
+    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-20.RData"))
