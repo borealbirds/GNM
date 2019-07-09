@@ -7,10 +7,12 @@ ROOT <- "d:/bam/BAM_data_v2019/gnm"
 PROJ <- "run2"
 load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-20.RData"))
 
+## CAWA, OSFL, RCKI, RUBL, MAWA
 #SPP <- colnames(yy)
 #SPP <- c("ALFL", "AMRO", "BOCH", "BTNW", "CAWA",
 #    "OSFL", "OVEN", "RUBL", "WCSP", "YRWA")
-SPP <- "OSFL"
+#SPP <- "OSFL"
+SPP <- "CAWA"
 SPPBCRss <- NULL
 for (spp in SPP) {
     SPPBCRss <- c(SPPBCRss, SPPBCR[grep(spp, SPPBCR)])
@@ -23,6 +25,8 @@ if (length(DONE) > 0) {
 }
 TOGO <- setdiff(SPPBCRss, DONE)
 
+spp <- "CAWA"
+TOGO <- paste0(spp, "-BCR_", u)
 
 #RUN <- "OSFL-BCR_60"
 run_brt1 <- function(RUN, SUB=NULL, RATE=0.001) {
