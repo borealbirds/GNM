@@ -4,7 +4,7 @@ library(gbm)
 library(dismo)
 
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
-PROJ <- "run1"
+PROJ <- "run2"
 load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-05.RData"))
 
 #SPP <- colnames(yy)
@@ -22,7 +22,11 @@ if (length(DONE) > 0) {
     data.frame(table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2)))
 }
 
-
+nd <- data.frame(ND$data, Landsc750_Ostr_Vir_v1=0,
+    Landsc750_Fagu_Gra_v1=0,
+    Landsc750_Tsug_Can_v1=0,
+    Landsc750_Quer_Rub_v1=0,
+    Species_Acer_Sah_v1=0)
 ## prepare stacks
 for (i in u) {
     cat("\nLoading stack for BCR", i, "\n")
@@ -34,11 +38,20 @@ for (i in u) {
     print(compare_sets(CN[[paste0("BCR_", i)]], names(pr))) # diff is ROAD
 
     pset <- CN[[paste0("BCR_", i)]]
+    if (i == 4)
+        pset <- c(pset, "MAP", "FFP", "Landsc750_Cham_Noo_v1")
+    if (i == 11)
+        pset <- c(pset, "Landsc750_Ostr_Vir_v1", "Landsc750_Fagu_Gra_v1",
+            "Landsc750_Tsug_Can_v1", "Landsc750_Quer_Rub_v1",
+            "Species_Acer_Sah_v1")
+    if (i == 83)
+        pset <- unique(unlist(CN))
 
     n <- length(values(pr[[1]]))
     nd <- matrix(0, n, length(pset))
     colnames(nd) <- pset
     for (j in pset) {
+        cat(j, "\n");flush.console()
         nd[,j] <- values(pr[[j]])
     }
     notNA <- rowSums(is.na(nd)) == 0
@@ -57,8 +70,6 @@ for (i in u) {
 ## need to set NALC land cover types not used in model (snow/ice) to 0
 
 ## predict ---------------------------------
-
-BCR <- 60 # this is BCR
 
 library(mefa4)
 library(gbm)
@@ -88,77 +99,65 @@ predict_gbm <- function(brt, ND, r1, impute=0) {
     rp
 }
 
-#load(file.path(ROOT, "OK.RData"))
-#SPP <- rownames(OK)[rowSums(OK >= 0)==ncol(OK)]
-
-SPP <- colnames(yy)
-#SPP <- rev(colnames(yy))
-
-PROJ <- "run1"
-
-#spp <- "CAWA"
-#spp <- "AMRO"
-spp <- "OSFL"
-
-
-r1 <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", BCR, "all_1km.grd")))
-ND <- readRDS(file.path(ROOT, paste0("STACK-ND-BCR_", BCR, ".rds")))
-ND$data$ARU <- 0
-#' 0=no data, 18=water, 19=snow & ice ==> set to D=0
-table(ND$data$nalc, useNA="a")
-table(ND$data$lf, useNA="a")
-
-
-brt <- readRDS(file.path(ROOT, "out", PROJ, paste0(spp, "-BCR_", BCR, ".rds")))
-rrr <- predict_gbm(brt, ND, r1, 0)
-writeRaster(rrr, fout, overwrite=TRUE)
-
-
-for (spp in SPP) {
-    gc()
-    fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
-    fout <- file.path(ROOT, "artifacts", spp,
-        paste0("mosaic-", spp, "-BCR_", i, "-", PROJ, "-nalcfix.tif"))
-    if (!file.exists(fout0) && !file.exists(fout)) {
-        BCR <- paste0("BCR_", i)
-        cat("\n", spp, BCR)
+PROJ <- "run2"
+#BCR <- 60 # this is BCR
+uu <- u
+for (BCR in uu) {
+    cat("loading stack:", BCR, "\n")
+    flush.console()
+    #spp <- "OSFL"
+    r1 <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", BCR, "all_1km.grd")))
+    ND <- readRDS(file.path(ROOT, paste0("STACK-ND-BCR_", BCR, ".rds")))
+    for (spp in c("CAWA", "MAWA", "OSFL", "RCKI", "RUBL")) {
+        gc()
+        cat("\t", spp, "in", BCR)
         flush.console()
-        ## load spp/bcr model object
-        e <- new.env()
-        tmp <- try(load(file.path(ROOT, "out", PROJ, paste0(spp, "-", BCR, ".RData")), envir=e))
-        brt <- e$out
-        rm(e)
-        ## preprocesses stack
-        cat(" -", if (inherits(brt, "try-error")) NA else brt$n.trees)
-        ## predict
+        #ND$data$ARU <- 0
+        #' 0=no data, 18=water, 19=snow & ice ==> set to D=0
+        #table(ND$data$nalc, useNA="a")
+        #table(ND$data$lf, useNA="a")
+
+        brt <- readRDS(file.path(ROOT, "out", PROJ, paste0(spp, "-BCR_", BCR, ".rds")))
         rrr <- predict_gbm(brt, ND, r1, 0)
+
+        fout <- file.path(ROOT, "artifacts", spp,
+            paste0("mosaic-", spp, "-BCR_", BCR, "-", PROJ, ".tif"))
         writeRaster(rrr, fout, overwrite=TRUE)
+        cat(" OK\n")
     }
 }
 
-spp <- "AMRO"
-for (spp in SPP) {
-    fout <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, "-nalcfix.tif"))
+
+for (spp in c("CAWA", "MAWA", "OSFL", "RCKI")) {
+    fout <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
     fin <- file.path(ROOT, "artifacts", spp,
-        paste0("mosaic-", spp, "-BCR_", 4:14, "-", PROJ, "-nalcfix.tif"))
+        paste0("mosaic-", spp, "-BCR_", u, "-", PROJ, ".tif"))
     if (!file.exists(fout)) {
-		cat(spp, "\n")
-		flush.console()
-		r4 <- raster(fin[1])
-		r5 <- raster(fin[2])
-		r6 <- raster(fin[3])
-		r7 <- raster(fin[4])
-		r8 <- raster(fin[5])
-		r9 <- raster(fin[6])
-		r10 <- raster(fin[7])
-		r11 <- raster(fin[8])
-		r12 <- raster(fin[9])
-		r13 <- raster(fin[10])
-		r14 <- raster(fin[11])
-		rast <- mosaic(r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, fun=mean)
-		writeRaster(rast, fout, overwrite=TRUE)
+        cat(spp, "\n")
+        flush.console()
+        r4 <- raster(fin[1])
+        r5 <- raster(fin[2])
+        r60 <- raster(fin[3])
+        r61 <- raster(fin[4])
+        r70 <- raster(fin[5])
+        r71 <- raster(fin[6])
+        r80 <- raster(fin[7])
+        r81 <- raster(fin[8])
+        r82 <- raster(fin[9])
+        r83 <- raster(fin[10])
+        r9 <- raster(fin[11])
+        r10 <- raster(fin[12])
+        r11 <- raster(fin[13])
+        r12 <- raster(fin[14])
+        r13 <- raster(fin[15])
+        r14 <- raster(fin[16])
+        rast <- mosaic(r4, r5, r60, r61, r70, r71,
+            r80, r81, r82, r83, r9, r10, r11, r12, r13, r14, fun=mean)
+        writeRaster(rast, fout, overwrite=TRUE)
     }
 }
+
+
 
 ## making png maps
 library(rgdal)
@@ -176,20 +175,19 @@ LAKES <- spTransform(LAKES, proj4string(BCR))
 
 #spp <- "AMGO"
 #library(opticut)
-for (spp in SPP) {
-    fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, "-nalcfix.tif"))
+for (spp in c("CAWA", "MAWA", "OSFL", "RCKI", "RUBL")) {
+    #fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
     if (file.exists(fout0)) {
         cat(spp, "\n")
         flush.console()
 
         rast <- raster(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")))
-#        rast <- raster(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, "-nalcfix.tif")))
 
         ## play with Lc
         #lc <- lorenz(values(rast)[!is.na(values(rast))])
         #q <- quantile(lc, probs=c(0.05, 0.1, 0.2, 0.5, 0.8, 0.99), type="L")
         #MAX <- q["80%"]
-        MAX <- cellStats(rast, 'mean')
+        MAX <- 2*cellStats(rast, 'mean')
         png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".png")),
             height=2000, width=3000)
 #        png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, "-nalcfix.png")),
@@ -197,14 +195,14 @@ for (spp in SPP) {
         op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
         plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
         plot(rast, col=bluegreen.colors(15), zlim=c(0,MAX), axes=FALSE,
-            main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
-            smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
+            main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE)#,
+            #smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
         plot(PROV, col="grey", add=TRUE)
         plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
         plot(BCR, add=TRUE)
         par(op)
         dev.off()
-
+if (FALSE) {
         col1 <- colorRampPalette(rev(c("#D73027","#FC8D59","#FEE090","#E0F3F8","#91BFDB","#4575B4")))(100)
         op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
         plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
@@ -215,7 +213,7 @@ for (spp in SPP) {
         plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
         plot(BCR, add=TRUE)
         par(op)
-
+}
 
     }
 }
