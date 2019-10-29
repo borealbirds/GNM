@@ -21,4 +21,4 @@ module load r/3.5.1
 export NODESLIST=$(echo $(srun hostname))
 
 # Run R script
-Rscript --vanilla gnm2.R 11
+Rscript --vanilla gnm3.R 11
