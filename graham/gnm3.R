@@ -4,7 +4,7 @@ fn <- "BAMdb-GNMsubset-2019-10-29.RData"
 ## project name for storing the output
 PROJ <- "run3"
 ## cli arguments
-bcr <- u
+bcr <- NULL
 SUB <- NULL
 if (!interactive()) {
     args <- commandArgs(trailingOnly = TRUE)
@@ -12,13 +12,15 @@ if (!interactive()) {
     if (length(args) >= 1) {
         bcr <- args[1L]
         if (as.integer(bcr) == 0L)
-            bcr <- u
+            bcr <- NULL
     }
     ## if 2nd arg provided, it is subset size
     if (length(args) >= 2) {
         SUB <- as.integer(commandArgs(trailingOnly = TRUE)[2L])
     }
 }
+if (is.null(bcr))
+    stop("BCR must be specified")
 cat("* Using BCR:\n")
 print(bcr)
 if (!is.null(SUB))
