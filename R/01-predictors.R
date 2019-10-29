@@ -46,6 +46,10 @@ dd <- dd[sample(dd$o),]
 dd <- dd[!duplicated(dd$SSYR2),]
 dd <- dd[order(dd$o),]
 dd$o <- NULL
+#' Visualize subunits
+#library(rgdal)
+#suu <- readOGR(file.path(ROOT, "data", "predictors", "subunits"))
+#plot(suu)
 #' Predictors for each time period
 e <- new.env()
 load(file.path(ROOT, "data", "predictors", "ss_2001attributes.RData"), envir=e)
@@ -69,9 +73,11 @@ dd2 <- dd2001 # use 2001 version for -2005 data
 dd2[dd$YEAR >= 2006,] <- dd2011[dd$YEAR >= 2006,] # use 2011 version for 2006- data
 #' Sanity checks
 #' Land facets: https://adaptwest.databasin.org/pages/adaptwest-landfacets
-dd2$lf[dd2$lf < 1] <- NA
-dd2$lf <- as.factor(as.integer(dd2$lf))
-table(dd2$lf, useNA="a")
+#dd2$lf[dd2$lf < 1] <- NA
+#dd2$lf <- as.factor(as.integer(dd2$lf))
+#table(dd2$lf, useNA="a")
+#' Drop land facets due to issues at places (big blobs show up on certain maps)
+dd2$lf <- NULL
 #' 0=no data, 18=water, 19=snow & ice
 dd2$nalc[dd2$nalc %)(% c(1, 17)] <- NA
 dd2$nalc <- as.factor(dd2$nalc)
@@ -104,12 +110,11 @@ dd$bcrsu <- factor(dd$bcrsu, u)
 table(dd$bcrsu, useNA="a")
 #' Identify points within the 100km buffers
 for (i in u){
+    cat("BCR", i, "\n")
     ri <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", i, "all_1km.gri")), 1)
     oi <- extract(ri, sf)
     dd[[paste0("BCR_", i)]] <- ifelse(is.na(oi), 0L, 1L)
 }
-#'
-
 #' Evaluate predictor sets based on hist, SD, etc
 get_cn <- function(z, rmax=0.9) {
     SD <- apply(z, 2, sd)
@@ -146,7 +151,7 @@ for (i in u) {
     BCR <- paste0("BCR_", i)
     z <- as.matrix(dd2[dd[,BCR] == 1L, sapply(dd2, is.numeric)])
     SD <- apply(z, 2, sd)
-    CN[[BCR]] <- unique(c("nalc", "lf", "ROAD", get_cn(z[,SD > 0])))
+    CN[[BCR]] <- unique(c("nalc", "ROAD", get_cn(z[,SD > 0])))
 }
 sapply(CN, length)
 #'
@@ -195,4 +200,4 @@ dd$ARU <- ifelse(startsWith(rownames(dd), "BU_"), 1, 0) # BU and WildTrax
 #'
 #' Save
 save(dd, dd2, yy, off, spt, u, CN, nsub, detbcr, SPPBCR,
-    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-20.RData"))
+    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-10-29.RData"))

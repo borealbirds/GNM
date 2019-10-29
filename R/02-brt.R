@@ -4,8 +4,8 @@ library(gbm)
 library(dismo)
 
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
-PROJ <- "run2"
-load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-20.RData"))
+PROJ <- "run3"
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-10-29.RData"))
 
 ## CAWA, OSFL, RCKI, RUBL, MAWA
 #SPP <- colnames(yy)
@@ -13,10 +13,7 @@ load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-20.RData"))
 #    "OSFL", "OVEN", "RUBL", "WCSP", "YRWA")
 #SPP <- "OSFL"
 SPP <- "CAWA"
-SPPBCRss <- NULL
-for (spp in SPP) {
-    SPPBCRss <- c(SPPBCRss, SPPBCR[grep(spp, SPPBCR)])
-}
+SPPBCRss <- SPPBCR[grep(spp, SPPBCR)]
 
 DONE <- sapply(strsplit(list.files(file.path(ROOT, "out", PROJ)), ".", fixed=TRUE), function(z) z[1L])
 if (length(DONE) > 0) {
