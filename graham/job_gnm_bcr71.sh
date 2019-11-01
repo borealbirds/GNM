@@ -4,7 +4,7 @@
 #SBATCH --ntasks-per-node=32    # 32 cores on each node
 #SBATCH --mem=0                 # use all ~3.9G mem per core
 #SBATCH --time=24:00:00         # time (HH:MM:SS)
-#SBATCH --job-name=bcr7
+#SBATCH --job-name=bcr71
 #SBATCH --output=%x-%j.out
 #SBATCH --mail-user=solymos@ualberta.ca
 #SBATCH --mail-type=ALL
@@ -21,4 +21,4 @@ module load r/3.5.1
 export NODESLIST=$(echo $(srun hostname))
 
 # Run R script
-Rscript --vanilla gnm3.R 7
+Rscript --vanilla gnm3.R 71
