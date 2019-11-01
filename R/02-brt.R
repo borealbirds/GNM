@@ -7,6 +7,14 @@ ROOT <- "d:/bam/BAM_data_v2019/gnm"
 PROJ <- "run3"
 load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-10-29.RData"))
 
+DONE <- sapply(strsplit(list.files(file.path(ROOT, "out", PROJ)), ".", fixed=TRUE), function(z) z[1L])
+
+D <- data.frame(do.call(rbind, strsplit(SPPBCR, "-")))
+rownames(D) <- SPPBCR
+D$done <- SPPBCR %in% DONE
+summary(D)
+table(D$X2, D$done)
+
 ## CAWA, OSFL, RCKI, RUBL, MAWA
 #SPP <- colnames(yy)
 #SPP <- c("ALFL", "AMRO", "BOCH", "BTNW", "CAWA",
@@ -15,7 +23,6 @@ load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-10-29.RData"))
 SPP <- "CAWA"
 SPPBCRss <- SPPBCR[grep(spp, SPPBCR)]
 
-DONE <- sapply(strsplit(list.files(file.path(ROOT, "out", PROJ)), ".", fixed=TRUE), function(z) z[1L])
 if (length(DONE) > 0) {
     cat("OK\n* Summary so far:\n")
     table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2))

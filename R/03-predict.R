@@ -4,8 +4,8 @@ library(gbm)
 library(dismo)
 
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
-PROJ <- "run2"
-load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-05.RData"))
+PROJ <- "run3"
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-10-29.RData"))
 
 #SPP <- colnames(yy)
 #SPP <- c("ALFL", "AMRO", "BOCH", "BTNW", "CAWA",
