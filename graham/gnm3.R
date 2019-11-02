@@ -83,7 +83,7 @@ SPPBCRss <- SPPBCR[grep(paste0("BCR_", bcr), SPPBCR)]
 #    SPPBCR <- SPPBCR[1:2]
 
 DONE <- as.character(
-    sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L]))
+    sapply(strsplit(list.files(paste0("/scratch/psolymos/out/", PROJ)), ".", fixed=TRUE), function(z) z[1L]))
 #DONE <- unique(c(DONE0, DONE))
 if (length(DONE) > 0) {
     cat("OK\n* Summary so far:\n")
@@ -157,11 +157,11 @@ while (length(TOGO) > 0) {
         cat("\n    > Saving:", i, "... ")
         out <- res[[i]]
         #saveRDS(out, file=paste0("out/", PROJ, "/", if (TEST) "00test_" else "", i, ".RData"))
-        save(out, file=paste0("out/", PROJ, "/", if (TEST) "00test_" else "", i, ".RData"))
+        save(out, file=paste0("/scratch/psolymos/out/", PROJ, "/", if (TEST) "00test_" else "", i, ".RData"))
         cat("OK")
     }
     DONE <- as.character(
-        sapply(strsplit(list.files(paste0("out/", PROJ)), ".", fixed=TRUE), function(z) z[1L]))
+        sapply(strsplit(list.files(paste0("/scratch/psolymos/out/", PROJ)), ".", fixed=TRUE), function(z) z[1L]))
     TOGO <- setdiff(SPPBCRss, DONE)
 }
 
