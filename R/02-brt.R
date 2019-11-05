@@ -62,8 +62,12 @@ run_brt1 <- function(RUN, SUB=NULL, RATE=0.001) {
     out <- try(gbm.step(DAT,
         gbm.y = 1,
         gbm.x = 4:ncol(DAT),
-        offset = DAT$offset, site.weights = DAT$weights,
-        family = "poisson", tree.complexity = 3, learning.rate = RATE, bag.fraction = 0.5))
+        offset = DAT$offset,
+        site.weights = DAT$weights,
+        family = "poisson",
+        tree.complexity = 3,
+        learning.rate = RATE,
+        bag.fraction = 0.5))
     out
 }
 run_brt2 <- function(RUN, SUB=NULL, RATE=0.001, ntree=1000) {
