@@ -17,16 +17,13 @@ for (spp in SPP) {
 }
 
 DONE <- sapply(strsplit(list.files(file.path(ROOT, "out", PROJ)), ".", fixed=TRUE), function(z) z[1L])
-if (length(DONE) > 0) {
-    cat("OK\n* Summary so far:\n")
-    data.frame(table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2)))
-}
+done <- data.frame(table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2)))
+tab <- data.frame(table(sapply(strsplit(SPPBCR, "-"), "[[", 2)))
+tab$done <- done$Freq[match(tab$Var1, done$Var1)]
+tab$done[is.na(tab$done)] <- 0
+tab$perc <- 100 * tab$done / tab$Freq
+tab
 
-nd <- data.frame(ND$data, Landsc750_Ostr_Vir_v1=0,
-    Landsc750_Fagu_Gra_v1=0,
-    Landsc750_Tsug_Can_v1=0,
-    Landsc750_Quer_Rub_v1=0,
-    Species_Acer_Sah_v1=0)
 ## prepare stacks
 for (i in u) {
     cat("\nLoading stack for BCR", i, "\n")
@@ -35,30 +32,29 @@ for (i in u) {
 
     pr <- stack(file.path(ROOT, "data", "subunits", paste0("bcr", i, "all_1km.grd")))
 
-    print(compare_sets(CN[[paste0("BCR_", i)]], names(pr))) # diff is ROAD
-
     pset <- CN[[paste0("BCR_", i)]]
-    if (i == 4)
-        pset <- c(pset, "MAP", "FFP", "Landsc750_Cham_Noo_v1")
-    if (i == 11)
-        pset <- c(pset, "Landsc750_Ostr_Vir_v1", "Landsc750_Fagu_Gra_v1",
-            "Landsc750_Tsug_Can_v1", "Landsc750_Quer_Rub_v1",
-            "Species_Acer_Sah_v1")
-    if (i == 83)
-        pset <- unique(unlist(CN))
+    print(compare_sets(pset, names(pr)))
+#    if (i == 4)
+#        pset <- c(pset, "MAP", "FFP", "Landsc750_Cham_Noo_v1")
+#    if (i == 11)
+#        pset <- c(pset, "Landsc750_Ostr_Vir_v1", "Landsc750_Fagu_Gra_v1",
+#            "Landsc750_Tsug_Can_v1", "Landsc750_Quer_Rub_v1",
+#           "Species_Acer_Sah_v1")
+#    if (i == 83)
+#        pset <- unique(unlist(CN))
 
     n <- length(values(pr[[1]]))
     nd <- matrix(0, n, length(pset))
     colnames(nd) <- pset
     for (j in pset) {
-        cat(j, "\n");flush.console()
+        #cat(j, "\n");flush.console()
         nd[,j] <- values(pr[[j]])
     }
     notNA <- rowSums(is.na(nd)) == 0
     #notNA <- !is.na(nd[,1])
     nd <- as.data.frame(nd[notNA,,drop=FALSE])
     nd$nalc <- as.factor(nd$nalc)
-    nd$lf <- as.factor(nd$lf)
+#    nd$lf <- as.factor(nd$lf)
 
     nd$offset <- 0L
     nd$weights <- 1L
@@ -76,10 +72,10 @@ library(gbm)
 library(raster)
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
 #ROOT <- "c:/p/tmp/gnm"
-load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-06-20.RData"))
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-10-29.RData"))
 
 predict_gbm <- function(brt, ND, r1, impute=0) {
-    if (inherits(brt, "try-error")) {
+    if (inherits(brt, "try-error") || is.null(brt)) {
         rp <- r1[[1]]
         values(rp)[!is.na(values(rp))] <- impute
     } else {
@@ -99,8 +95,8 @@ predict_gbm <- function(brt, ND, r1, impute=0) {
     rp
 }
 
-PROJ <- "run2"
-#BCR <- 60 # this is BCR
+PROJ <- "run3spp1"
+#BCR <- 83 # this is BCR
 uu <- u
 for (BCR in uu) {
     cat("loading stack:", BCR, "\n")
@@ -108,18 +104,26 @@ for (BCR in uu) {
     #spp <- "OSFL"
     r1 <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", BCR, "all_1km.grd")))
     ND <- readRDS(file.path(ROOT, paste0("STACK-ND-BCR_", BCR, ".rds")))
-    for (spp in c("CAWA", "MAWA", "OSFL", "RCKI", "RUBL")) {
+    #SPPss <- substr(SPPBCR[grep(paste0("BCR_", BCR), SPPBCR)], 1, 4)
+    SPPss <- c("OSFL","CAWA", "BBWA", "BLPW")
+    #spp <- SPPss[1]
+    for (spp in SPPss) {
         gc()
         cat("\t", spp, "in", BCR)
         flush.console()
-        #ND$data$ARU <- 0
-        #' 0=no data, 18=water, 19=snow & ice ==> set to D=0
-        #table(ND$data$nalc, useNA="a")
-        #table(ND$data$lf, useNA="a")
-
-        brt <- readRDS(file.path(ROOT, "out", PROJ, paste0(spp, "-BCR_", BCR, ".rds")))
+        fin <- file.path(ROOT, "out", PROJ, paste0(spp, "-BCR_", BCR, ".RData"))
+        if (file.exists(fin)) {
+            e <- new.env()
+            load(fin, envir=e)
+            brt <- e$out
+            rm(e)
+        } else {
+            brt <- NULL
+        }
         rrr <- predict_gbm(brt, ND, r1, 0)
 
+        if (!dir.exists(file.path(ROOT, "artifacts", spp)))
+            dir.create(file.path(ROOT, "artifacts", spp))
         fout <- file.path(ROOT, "artifacts", spp,
             paste0("mosaic-", spp, "-BCR_", BCR, "-", PROJ, ".tif"))
         writeRaster(rrr, fout, overwrite=TRUE)
@@ -127,8 +131,8 @@ for (BCR in uu) {
     }
 }
 
-
-for (spp in c("CAWA", "MAWA", "OSFL", "RCKI")) {
+SPPss <- c("OSFL","CAWA", "BBWA", "BLPW")
+for (spp in SPPss) {
     fout <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
     fin <- file.path(ROOT, "artifacts", spp,
         paste0("mosaic-", spp, "-BCR_", u, "-", PROJ, ".tif"))
