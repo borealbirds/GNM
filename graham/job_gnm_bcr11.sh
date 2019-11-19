@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --account=def-psolymos  # replace this with your own account
-#SBATCH --nodes=1               # number of whole nodes
+#SBATCH --nodes=2               # number of whole nodes
 #SBATCH --ntasks-per-node=32    # 32 cores on each node
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=24:00:00         # time (HH:MM:SS)
+#SBATCH --time=48:00:00         # time (HH:MM:SS)
 #SBATCH --job-name=bcr11
 #SBATCH --output=%x-%j.out
 #SBATCH --mail-user=solymos@ualberta.ca
