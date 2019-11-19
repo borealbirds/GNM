@@ -24,6 +24,7 @@ tab$done[is.na(tab$done)] <- 0
 tab$perc <- 100 * tab$done / tab$Freq
 tab
 
+
 ## prepare stacks
 for (i in u) {
     cat("\nLoading stack for BCR", i, "\n")
@@ -95,39 +96,48 @@ predict_gbm <- function(brt, ND, r1, impute=0) {
     rp
 }
 
-PROJ <- "run3spp1"
+
+PROJ <- "run3"
 #BCR <- 83 # this is BCR
 uu <- u
+uu <- uu[uu != 13]
+uu <- uu[uu != 60]
 for (BCR in uu) {
     cat("loading stack:", BCR, "\n")
     flush.console()
     #spp <- "OSFL"
     r1 <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", BCR, "all_1km.grd")))
     ND <- readRDS(file.path(ROOT, paste0("STACK-ND-BCR_", BCR, ".rds")))
-    #SPPss <- substr(SPPBCR[grep(paste0("BCR_", BCR), SPPBCR)], 1, 4)
-    SPPss <- c("OSFL","CAWA", "BBWA", "BLPW")
+    SPPss <- substr(SPPBCR[grep(paste0("BCR_", BCR), SPPBCR)], 1, 4)
+    #SPPss <- c("OSFL","CAWA", "BBWA", "BLPW")
     #spp <- SPPss[1]
+    #SPPss <- SPPss[which(SPPss==spp):length(SPPss)]
     for (spp in SPPss) {
         gc()
-        cat("\t", spp, "in", BCR)
+        cat("\t", spp, "@ BCR", BCR, ">", which(SPPss == spp), "/", length(SPPss))
         flush.console()
         fin <- file.path(ROOT, "out", PROJ, paste0(spp, "-BCR_", BCR, ".RData"))
         if (file.exists(fin)) {
             e <- new.env()
-            load(fin, envir=e)
-            brt <- e$out
+            aa <- try(load(fin, envir=e))
+            if (inherits(aa, "try-error")) {
+                writeLines(as.character(aa),
+                    file.path(ROOT, "out", "error",
+                        paste0(PROJ, "-", spp, "-BCR_", BCR, ".txt")))
+            } else {
+                brt <- e$out
+            }
             rm(e)
         } else {
             brt <- NULL
         }
         rrr <- predict_gbm(brt, ND, r1, 0)
-
         if (!dir.exists(file.path(ROOT, "artifacts", spp)))
             dir.create(file.path(ROOT, "artifacts", spp))
         fout <- file.path(ROOT, "artifacts", spp,
             paste0("mosaic-", spp, "-BCR_", BCR, "-", PROJ, ".tif"))
         writeRaster(rrr, fout, overwrite=TRUE)
-        cat(" OK\n")
+        cat(" > OK\n")
     }
 }
 
