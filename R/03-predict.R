@@ -99,10 +99,7 @@ predict_gbm <- function(brt, ND, r1, impute=0) {
 
 PROJ <- "run3"
 #BCR <- 83 # this is BCR
-uu <- u
-uu <- uu[uu != 13]
-uu <- uu[uu != 60]
-for (BCR in uu) {
+for (BCR in u) {
     cat("loading stack:", BCR, "\n")
     flush.console()
     #spp <- "OSFL"
@@ -141,14 +138,38 @@ for (BCR in uu) {
     }
 }
 
-SPPss <- c("OSFL","CAWA", "BBWA", "BLPW")
-for (spp in SPPss) {
-    fout <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
+## filling in the missing pieces
+SPP <- colnames(yy)
+SPPBCRall <- levels(interaction(as.factor(SPP)[1], paste0("BCR_", u), sep="-"))
+str(SPPBCRall)
+length(SPP) * length(u)
+for (BCR in u) {
+    cat("loading stack:", BCR, "\n")
+    flush.console()
+    r1 <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", BCR, "all_1km.grd")))
+    ND <- readRDS(file.path(ROOT, paste0("STACK-ND-BCR_", BCR, ".rds")))
+    SPPss1 <- substr(SPPBCR[grep(paste0("BCR_", BCR), SPPBCR)], 1, 4)
+    SPPss2 <- substr(SPPBCRall[grep(paste0("BCR_", BCR), SPPBCRall)], 1, 4)
+    SPPss <- setdiff(SPPss2, SPPss1)
+    for (spp in SPPss) {
+        gc()
+        cat("\t", spp, "@ BCR", BCR, ">", which(SPPss == spp), "/", length(SPPss))
+        flush.console()
+        rrr <- predict_gbm(NULL, ND, r1, 0)
+        fout <- file.path(ROOT, "artifacts", spp,
+            paste0("mosaic-", spp, "-BCR_", BCR, "-", PROJ, ".tif"))
+        writeRaster(rrr, fout, overwrite=FALSE)
+        cat(" > OK\n")
+    }
+}
+
+
+SPPss <- colnames(yy)
+mosaic_fun <- function(spp) {
+    fout <- file.path(ROOT, "artifacts", "00mosaic", paste0("mosaic-", spp, "-", PROJ, ".tif"))
     fin <- file.path(ROOT, "artifacts", spp,
         paste0("mosaic-", spp, "-BCR_", u, "-", PROJ, ".tif"))
     if (!file.exists(fout)) {
-        cat(spp, "\n")
-        flush.console()
         r4 <- raster(fin[1])
         r5 <- raster(fin[2])
         r60 <- raster(fin[3])
@@ -169,6 +190,15 @@ for (spp in SPPss) {
             r80, r81, r82, r83, r9, r10, r11, r12, r13, r14, fun=mean)
         writeRaster(rast, fout, overwrite=TRUE)
     }
+    invisible()
+}
+#SPPss <- SPPss[32:150]
+for (spp in SPPss) {
+    cat(spp)
+    flush.console()
+    aa <- try(mosaic_fun(spp))
+    if (!inherits(aa, "try-error"))
+        cat(" - OK\n") else cat(" -------- ERROR\n")
 }
 
 
