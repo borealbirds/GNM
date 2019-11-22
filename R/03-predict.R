@@ -209,6 +209,7 @@ library(raster)
 
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
 #ROOT <- "c:/p/tmp/gnm"
+PROJ <- "run3"
 
 bluegreen.colors <- colorRampPalette(c("#FFFACD", "lemonchiffon","#FFF68F", "khaki1","#ADFF2F", "greenyellow", "#00CD00", "green3", "#48D1CC", "mediumturquoise", "#007FFF", "blue"), space="Lab", bias=0.5)
 
@@ -217,49 +218,39 @@ PROV <- readOGR(dsn=file.path(ROOT, "data", "prov"), "province_state_line")
 LAKES <- readOGR(dsn=file.path(ROOT, "data", "lakes"), "lakes_lcc")
 LAKES <- spTransform(LAKES, proj4string(BCR))
 
-#spp <- "AMGO"
-#library(opticut)
-for (spp in c("CAWA", "MAWA", "OSFL", "RCKI", "RUBL")) {
-    #fout0 <- file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif"))
-    if (file.exists(fout0)) {
-        cat(spp, "\n")
-        flush.console()
+for (spp in colnames(yy)) {
+    cat(spp, "\n")
+    flush.console()
 
-        rast <- raster(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".tif")))
+    rast <- raster(file.path(ROOT, "artifacts", "00mosaic", paste0("mosaic-", spp, "-", PROJ, ".tif")))
 
-        ## play with Lc
-        #lc <- lorenz(values(rast)[!is.na(values(rast))])
-        #q <- quantile(lc, probs=c(0.05, 0.1, 0.2, 0.5, 0.8, 0.99), type="L")
-        #MAX <- q["80%"]
-        MAX <- 2*cellStats(rast, 'mean')
-        png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, ".png")),
-            height=2000, width=3000)
-#        png(file.path(ROOT, "artifacts", spp, paste0("mosaic-", spp, "-", PROJ, "-nalcfix.png")),
-#            height=2000, width=3000)
-        op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
-        plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
-        plot(rast, col=bluegreen.colors(15), zlim=c(0,MAX), axes=FALSE,
-            main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE)#,
-            #smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
-        plot(PROV, col="grey", add=TRUE)
-        plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
-        plot(BCR, add=TRUE)
-        par(op)
-        dev.off()
+    MAX <- 2*cellStats(rast, 'mean')
+    png(file.path(ROOT, "artifacts", "00mosaic-png", paste0("mosaic-", spp, "-", PROJ, ".png")),
+        height=2000, width=3000)
+    op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
+    plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
+    plot(rast, col=bluegreen.colors(15), zlim=c(0,MAX), axes=FALSE,
+        main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
+        smallplot = c(0.75,0.95,0.75,0.80), axis.args=list(cex.axis=2))
+    plot(PROV, col="grey", add=TRUE)
+    plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
+    plot(BCR, add=TRUE)
+    par(op)
+    dev.off()
+
 if (FALSE) {
-        col1 <- colorRampPalette(rev(c("#D73027","#FC8D59","#FEE090","#E0F3F8","#91BFDB","#4575B4")))(100)
-        op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
-        plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
-        plot(rast, col=col1, zlim=c(0,MAX), axes=FALSE,
-            main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
-            smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
-        plot(PROV, col="grey", add=TRUE)
-        plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
-        plot(BCR, add=TRUE)
-        par(op)
+    col1 <- colorRampPalette(rev(c("#D73027","#FC8D59","#FEE090","#E0F3F8","#91BFDB","#4575B4")))(100)
+    op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
+    plot(rast, col="blue", axes=FALSE, legend=FALSE, main=paste(spp), box=FALSE)
+    plot(rast, col=col1, zlim=c(0,MAX), axes=FALSE,
+        main=spp, add=TRUE, legend.width=1.5, horizontal = TRUE,
+        smallplot = c(0.60,0.85,0.82,0.87), axis.args=list(cex.axis=2))
+    plot(PROV, col="grey", add=TRUE)
+    plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
+    plot(BCR, add=TRUE)
+    par(op)
 }
 
-    }
 }
 
 ## copying mosaice`d files
