@@ -164,7 +164,7 @@ r <- raster(
     ymn=bb["y", "min"],
     ymx=bb["y", "max"],
     res=250,
-    crs=st_crs(sf))
+    crs=st_crs(sf)$proj4string)
 sr <- rasterize(xy, r, field=1, fun='sum')
 W <- matrix(1,nrow=5,ncol=5)
 W[c(1,5,21,25)] <- 0
@@ -175,6 +175,14 @@ wi <- 1/ni
 nsub <- ceiling(sum(sapply(sort(unique(ni)), function(z) sum(ni == z)/z)))
 dd$ni <- ni
 dd$wi <- wi
+#' spatial grid IDs
+if (FALSE) {
+r10 <- aggregate(r, fact=10)
+values(r10) <- seq_len(ncell(r10))
+cid <- extract(r10, xy)
+names(cid) <- rownames(sf)
+save(cid, file="d:/bam/BAM_data_v2019/gnm/data/cid.RData")
+}
 #' Calculating set of species-subunit combination with >0 sums
 fullBCRlist <- names(sort(colSums(dd[,paste0("BCR_", u)])))
 b <- as(as.matrix(dd[,paste0("BCR_", u)]), "dgCMatrix")
@@ -196,7 +204,7 @@ dd$isBBS <- startsWith(rownames(dd), "BBSAB")
 table(dd2[,"ROAD"])
 dd2[dd$isBBS,"ROAD"] <- 1
 table(dd2[,"ROAD"])
-dd$ARU <- ifelse(startsWith(rownames(dd), "BU_"), 1, 0) # BU and WildTrax
+dd$ARU <- ifelse(startsWith(as.character(dd$PCODE), "BU_"), 1, 0) # BU and WildTrax
 #'
 #' Save
 save(dd, dd2, yy, off, spt, u, CN, nsub, detbcr, SPPBCR,
