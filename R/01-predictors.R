@@ -76,45 +76,97 @@ dd2[dd$YEAR >= 2006,] <- dd2011[dd$YEAR >= 2006,] # use 2011 version for 2006- d
 #dd2$lf[dd2$lf < 1] <- NA
 #dd2$lf <- as.factor(as.integer(dd2$lf))
 #table(dd2$lf, useNA="a")
-#' Drop land facets due to issues at places (big blobs show up on certain maps)
+#dd2 <- as.matrix(dd2)
+#'
+#' Assign BCR subunits to surveys
+#bcrsu <- st_read(file.path(ROOT, "data", "predictors", "subunits", "BCRSubunits.shp"))
+bcrsu <- st_read(file.path(ROOT, "data", "predictors", "subunits", "BCRunits2.shp"))
+sf <- sf[rownames(dd),]
+o <- st_join(sf, bcrsu, join = st_intersects)
+o <- o[rownames(dd),]
+dd$bcr <- o$BCR
+table(dd$bcr, useNA="a")
+#' BCR units: 6, 7, 8 are split into multiple parts in Canada (6 -> 60+61 etc)
+#' BCRs in US are x100 (4 -> 400)
+u <- c(4, 5, 60, 61, 70, 71, 80, 81, 82, 83, 9, 10, 11, 12, 13, 14, # Canada
+    200, 400, 500, 1000, 1100, 1200, 1300, 1400)                    # US
+#dd$bcrsu <- factor(dd$bcrsu, u)
+#table(dd$bcrsu, useNA="a")
+#' Identify points within the 100km buffers
+#' Intersect US portion (no need to have 2001/2011 stacks b/c there is no 2x veg info)
+for (i in u) {
+    cat("BCR", i, "\n")
+    ri <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", i, "all_1km.gri")), 1)
+    oi <- extract(ri, sf)
+    oi <- !is.na(oi)
+    dd[[paste0("BCR_", i)]] <- ifelse(oi, 1L, 0L)
+    # read in a US BCR stack to get the list of variables there
+    if (i %% 100 == 0) {
+        si <- stack(file.path(ROOT, "data", "subunits", paste0("bcr", i, "all_1km.gri")))
+        vi <- extract(si, sf[oi,])
+        cnu <- colnames(vi)
+        cnu <- cnu[cnu != "bcr"]
+        dd2[oi,cnu] <- vi[,cnu]
+    }
+}
+#'
+#' Land facets dropped due to issues at places (big blobs show up on certain maps)
 dd2$lf <- NULL
-#' 0=no data, 18=water, 19=snow & ice
-dd2$nalc[dd2$nalc %)(% c(1, 17)] <- NA
-dd2$nalc <- as.factor(dd2$nalc)
-table(dd2$nalc, useNA="a")
 #' Check some variables: need to drop RH, PAS, Eref
 dd2$RH <- NULL
 dd2$PAS <- NULL
 dd2$Eref <- NULL
-#' Subsets
-ss <- rownames(dd2)[rowSums(is.na(dd2)) == 0]
+#' Use ROAD layer from `dd2` not BBS or not from `dd`
+dd$ROAD <- NULL
+#' Dealing with ARU and BBS data
+dd$isBBS <- startsWith(rownames(dd), "BBSAB")
+table(dd2[,"ROAD"])
+dd2[dd$isBBS,"ROAD"] <- 1
+dd2$ROAD[is.na(dd2$ROAD)] <- 0
+table(dd2[,"ROAD"], useNA="a")
+#' ARUs
+dd$ARU <- ifelse(startsWith(as.character(dd$PCODE), "BU_"), 1, 0) # BU and WildTrax
+table(dd$ARU, useNA="a")
+#' 0=no data, 18=water, 19=snow & ice
+dd2$nalc[dd2$nalc %)(% c(1, 17)] <- NA
+dd2$nalc <- as.factor(dd2$nalc)
+table(dd2$nalc, useNA="a")
+#' Keep points that are within the buffers and terrain/climate is not NA
+m <- dd[,colnames(dd)[startsWith(colnames(dd), "BCR_")]]
+keep <- rowSums(m) > 0 & !is.na(dd2$slope) & !is.na(dd2$AHM) & !is.na(dd2$nalc)
+keep[is.na(dd2$Structure_Volume_Total_v1) & !is.na(dd2$LandCover_NonVeg_v1.1)] <- FALSE
+cnCan <- colnames(dd2001)[colnames(dd2001) %in% colnames(dd2)]
+cnUS <- colnames(vi)[colnames(vi) %in% colnames(dd2)]
+sum(keep)
+for (i in u) {
+    cat("------------------------------ BCR", i, "\n")
+    if (i %% 100 == 0) {
+        tmp <- dd2[dd[[paste0("BCR_", i)]] > 0, cnUS]
+        print(table(rowSums(is.na(tmp))))
+        keep[rownames(tmp)[rowSums(is.na(tmp)) > 0]] <- FALSE
+    } else {
+        tmp <- dd2[dd[[paste0("BCR_", i)]] > 0, cnCan]
+        print(table(rowSums(is.na(tmp))))
+        keep[rownames(tmp)[rowSums(is.na(tmp)) > 0]] <- FALSE
+    }
+}
+sum(keep)
+#' Subset
+ss <- rownames(dd2)[keep]
 dd <- dd[ss,]
 dd2 <- dd2[ss,]
 yy <- yy[ss,]
 off <- off[ss,]
 sf <- sf[ss,]
+#' Check NA patterns
 c(sum(is.na(dd)), sum(is.na(dd2)), sum(is.na(off)), sum(is.na(yy)))
-#' Use ROAD layer from `dd2` not BBS or not from `dd`
-dd$ROAD <- NULL
+plot(table(rowSums(is.na(dd2))))
+data.frame(n=colSums(is.na(dd)))
+data.frame(n=colSums(is.na(dd2)))
 #' Drop species with 0 detections after subsets
 any(colSums(yy) == 0)
 yy <- yy[,colSums(yy) > 0]
 sort(colSums(yy))
-#'
-#' Assign BCR subunits to surveys
-bcrsu <- st_read(file.path(ROOT, "data", "predictors", "subunits", "BCRSubunits.shp"))
-o <- st_join(sf, bcrsu, join = st_intersects)
-dd$bcrsu <- o$BCR
-u <- c(4, 5, 60, 61, 70, 71, 80, 81, 82, 83, 9, 10, 11, 12, 13, 14)
-dd$bcrsu <- factor(dd$bcrsu, u)
-table(dd$bcrsu, useNA="a")
-#' Identify points within the 100km buffers
-for (i in u){
-    cat("BCR", i, "\n")
-    ri <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", i, "all_1km.gri")), 1)
-    oi <- extract(ri, sf)
-    dd[[paste0("BCR_", i)]] <- ifelse(is.na(oi), 0L, 1L)
-}
 #' Evaluate predictor sets based on hist, SD, etc
 get_cn <- function(z, rmax=0.9) {
     SD <- apply(z, 2, sd)
@@ -149,9 +201,13 @@ CN <- list()
 for (i in u) {
     cat("BCR", i, "\n")
     BCR <- paste0("BCR_", i)
-    z <- as.matrix(dd2[dd[,BCR] == 1L, sapply(dd2, is.numeric)])
-    SD <- apply(z, 2, sd)
-    CN[[BCR]] <- unique(c("nalc", "ROAD", get_cn(z[,SD > 0])))
+    if (i %% 100 == 0) {
+        CN[[BCR]] <- unique(c("nalc", "ROAD", cnUS))
+    } else {
+        z <- as.matrix(dd2[dd[,BCR] == 1L, cnCan[cnCan != "nalc"]])
+        SD <- apply(z, 2, sd)
+        CN[[BCR]] <- unique(c("nalc", "ROAD", get_cn(z[,SD > 0])))
+    }
 }
 sapply(CN, length)
 #'
@@ -176,13 +232,9 @@ nsub <- ceiling(sum(sapply(sort(unique(ni)), function(z) sum(ni == z)/z)))
 dd$ni <- ni
 dd$wi <- wi
 #' spatial grid IDs
-if (FALSE) {
 r10 <- aggregate(r, fact=10)
 values(r10) <- seq_len(ncell(r10))
-cid <- extract(r10, xy)
-names(cid) <- rownames(sf)
-save(cid, file="d:/bam/BAM_data_v2019/gnm/data/cid.RData")
-}
+dd$cid <- extract(r10, xy)
 #' Calculating set of species-subunit combination with >0 sums
 fullBCRlist <- names(sort(colSums(dd[,paste0("BCR_", u)])))
 b <- as(as.matrix(dd[,paste0("BCR_", u)]), "dgCMatrix")
@@ -199,13 +251,8 @@ for (i in colnames(detbcr)) {
     }
 }
 #'
-#' Dealing with ARU and BBS data
-dd$isBBS <- startsWith(rownames(dd), "BBSAB")
-table(dd2[,"ROAD"])
-dd2[dd$isBBS,"ROAD"] <- 1
-table(dd2[,"ROAD"])
-dd$ARU <- ifelse(startsWith(as.character(dd$PCODE), "BU_"), 1, 0) # BU and WildTrax
-#'
+data.frame(n=colSums(is.na(dd)))
+data.frame(n=colSums(is.na(dd2)))
 #' Save
-save(dd, dd2, yy, off, spt, u, CN, nsub, detbcr, SPPBCR,
-    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2019-10-29.RData"))
+save(dd, dd2, yy, off, spt, u, CN, nsub, detbcr, SPPBCR, cnCan, cnUS,
+    file=file.path(ROOT, "data", "BAMdb-GNMsubset-2020-01-08.RData"))
