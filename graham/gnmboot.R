@@ -1,30 +1,33 @@
 ## --- settings ---
 ## file name for data bundle, need to be in /data/ dir
-fn <- "BAMdb-GNMsubset-2019-10-29.RData"
+fn <- "BAMdb-GNMsubset-2020-01-08.RData"
 ## project name for storing the output
-PROJ <- "run3"
+PROJ <- "boot"
+## output directory
+OUTDIR <- if (interactive())
+    paste0("d:/bam/BAM_data_v2019/gnm/out/", PROJ) else paste0("/scratch/psolymos/out/", PROJ)
 ## cli arguments
-bcr <- NULL
-SUB <- NULL
-if (!interactive()) {
-    args <- commandArgs(trailingOnly = TRUE)
-    ## if 1 arg provided, it is BCR
-    if (length(args) >= 1) {
-        bcr <- args[1L]
-        if (as.integer(bcr) == 0L)
-            bcr <- NULL
-    }
-    ## if 2nd arg provided, it is subset size
-    if (length(args) >= 2) {
-        SUB <- as.integer(commandArgs(trailingOnly = TRUE)[2L])
-    }
-}
-if (is.null(bcr))
-    stop("BCR must be specified")
-cat("* Using BCR:\n")
-print(bcr)
-if (!is.null(SUB))
-    cat("* Sample size set to", SUB, "\n")
+#bcr <- NULL
+#SUB <- NULL
+#if (!interactive()) {
+#    args <- commandArgs(trailingOnly = TRUE)
+#    ## if 1 arg provided, it is BCR
+#    if (length(args) >= 1) {
+#        bcr <- args[1L]
+#        if (as.integer(bcr) == 0L)
+#            bcr <- NULL
+#    }
+#    ## if 2nd arg provided, it is subset size
+#    if (length(args) >= 2) {
+#        SUB <- as.integer(commandArgs(trailingOnly = TRUE)[2L])
+#    }
+#}
+#if (is.null(bcr))
+#    stop("BCR must be specified")
+#cat("* Using BCR:\n")
+#print(bcr)
+#if (!is.null(SUB))
+#    cat("* Sample size set to", SUB, "\n")
 
 ## test suite uses limited sets
 TEST <- FALSE
@@ -36,8 +39,6 @@ cat("* Loading packages and sourcing functions:")
 library(parallel)
 library(mefa4)
 library(gbm)
-library(dismo)
-#source("~/repos/abmianalytics/birds/00-functions.R")
 
 ## Create an array from the NODESLIST environnement variable
 if (interactive()) {
@@ -52,7 +53,24 @@ if (interactive()) {
 
 cat("OK\n* Loading data on master ... ")
 load(file.path("data", fn))
-#load(file.path("data", "NTREE.RData"))
+load(file.path("data", "xvinfo.RData"))
+## get max tree size for each species to inform US models
+tmp <- strsplit(names(xvinfo), "-")
+x <- data.frame(sppbcr=names(xvinfo),
+    spp=sapply(tmp, "[[", 1),
+    bcr=sapply(tmp, "[[", 2),
+    nt=sapply(xvinfo, "[[", "ntree"),
+    vi=sapply(xvinfo, function(z)
+        length(z$varimp[z$varimp > 0])))
+x <- x[x$vi>0 & x$nt>0,]
+x$pocc <- colMeans(yy>0)[as.character(x$spp)]
+x$pbcr <- 0
+for (i in levels(x$bcr)) {
+    cm <- colMeans(yy[dd[[i]] > 0,]>0)
+    x$pbcr[x$bcr == i] <- cm[as.character(x$spp[x$bcr == i])]
+}
+ntmax <- aggregate(x$nt, list(spp=x$spp), max)
+ntmax <- structure(ntmax$x, names=as.character(ntmax$spp))
 
 ## Create the cluster with the nodes name.
 ## One process per count of node name.
@@ -64,88 +82,97 @@ cl <- makePSOCKcluster(nodeslist, type = "PSOCK")
 cat("OK\n* Loading packages on workers ... ")
 tmpcl <- clusterEvalQ(cl, library(mefa4))
 tmpcl <- clusterEvalQ(cl, library(gbm))
-tmpcl <- clusterEvalQ(cl, library(dismo))
 
 cat("OK\n* Exporting and data loading on workers ... ")
-tmpcl <- clusterExport(cl, "fn")
 if (interactive())
     tmpcl <- clusterEvalQ(cl, setwd("d:/bam/BAM_data_v2019/gnm"))
-#tmpcl <- clusterEvalQ(cl, load(file.path("data", fn)))
-clusterExport(cl, c("dd", "dd2", "off", "yy", "CN", "PROJ"))
+clusterExport(cl, c("dd", "dd2", "off", "yy", "CN", "PROJ", "xvinfo", "ntmax", "OUTDIR"))
 
 cat("OK\n* Establishing checkpoint ... ")
 SPP <- colnames(yy)
-SPPBCRss <- SPPBCR[grep(paste0("BCR_", bcr), SPPBCR)]
 
 
-#DONE <- character(0)
-#if (interactive() || TEST)
-#    SPPBCR <- SPPBCR[1:2]
+DONE <- list.files(OUTDIR)
+TOGO <- setdiff(SPP, DONE)
 
-DONE <- as.character(
-    sapply(strsplit(list.files(paste0("/scratch/psolymos/out/", PROJ)), ".", fixed=TRUE), function(z) z[1L]))
-#DONE <- unique(c(DONE0, DONE))
-if (length(DONE) > 0) {
-    cat("OK\n* Summary so far:\n")
-    table(sapply(strsplit(gsub(".RData", "", DONE), "-"), "[[", 2))
+
+run_brt_boot <- function(b, spp, OUTDIR) {
+    sppbcr <- SPPBCR[grep(spp, SPPBCR)]
+    for (RUN in sppbcr) {
+        bcr <- strsplit(RUN, "-")[[1]][2]
+        out <- .run_brt_boot(b, RUN)
+        if (!dir.exists(paste0(OUTDIR, "/", spp, "/",bcr)))
+            dir.create(paste0(OUTDIR, "/", spp, "/",bcr))
+        save(out, file=paste0(OUTDIR, "/", spp, "/",bcr, "/gnmboot-",
+            spp, "-", bcr, "-", b, ".RData"))
+    }
+    invisible(NULL)
 }
-TOGO <- setdiff(SPPBCRss, DONE)
 
-run_brt1 <- function(RUN, SUB=NULL, RATE=0.001) {
+## b: bootstrap id (>= 1)
+## RUN: SPP-BCR_NO tag
+.run_brt_boot <- function(b, RUN, verbose=interactive()) {
+    t0 <- proc.time()["elapsed"]
     ## parse input
     tmp <- strsplit(RUN, "-")[[1L]]
     spp <- tmp[1L]
     BCR <- tmp[2L]
-    ## create data subset
+    bcr <- as.integer(strsplit(BCR, "_")[[1L]][2L])
+    if (bcr %% 100 == 0) {
+        ## US all clim+topo
+        cn <- CN[[BCR]]
+        nt <- ntmax[spp]
+    } else {
+        ## Canada: based on XV
+        cn <- names(xvinfo[[RUN]]$varimp)[xvinfo[[RUN]]$varimp > 0]
+        nt <- xvinfo[[RUN]]$ntree
+    }
+
+    ## create data subset for BCR unit
     ss <- dd[,BCR] == 1L
-    if (sum(yy[ss, spp]) < 1)
-        return(structure(
-            sprintf("0 detections for %s in %s", spp, BCR),
-            class="try-error"))
     DAT <- data.frame(
         count=as.numeric(yy[ss, spp]),
         offset=off[ss, spp],
-        weights=dd$wi[ss],
+        #weights=dd$wi[ss],
+        cyid=dd$cyid[ss],
+        YEAR=dd$YEAR[ss],
         ARU=dd$ARU[ss], # ARU added here, but not as layer
-        dd2[ss, CN[[BCR]]])
-    if (!is.null(SUB)) {
-        DAT$weights <- 1
-        SUB <- min(SUB, nrow(DAT))
-        ## this is not bootstrap resampling
-        ## just subset to reduce memory footprint
-        DAT <- DAT[sample(nrow(DAT), SUB, prob=DAT$weights),]
+        dd2[ss, cn])
+    ## subsample based on 2.5x2.5km^2 cell x year units
+    DAT <- DAT[sample.int(nrow(DAT)),]
+    DAT <- DAT[!duplicated(DAT$cyid),]
+    if (b > 1)
+        DAT <- DAT[sample.int(nrow(DAT), replace=TRUE),]
+    ## 0 detection output
+    if (sum(DAT$count) < 1) {
+        out <- structure(
+            sprintf("0 detections for %s in %s", spp, BCR),
+            class="try-error")
+    } else {
+        if (verbose)
+            cat("\nFitting gbm::gbm for", spp, "in", BCR, "/ b =", b, "/ n =",nrow(DAT), "\n")
+        out <- try(gbm::gbm(DAT$count ~ . + offset(DAT$offset),
+            data=DAT[,-(1:3)],
+            n.trees = nt,
+            interaction.depth = 3,
+            shrinkage = 1/nt,
+            bag.fraction = 0.5,
+            #weights = DAT$weights,
+            distribution = "poisson",
+            var.monotone = NULL,#rep(0, length(4:ncol(DAT))),
+            keep.data = FALSE,
+            verbose = verbose,
+            n.cores = 1))
     }
-    cat("\nFitting gbm.step for", spp, "in", BCR, "\n")
-    cat("    Sample size =", nrow(DAT), "\n\n")
-    out <- try(gbm.step(DAT,
-        gbm.y = 1,
-        gbm.x = 4:ncol(DAT),
-        offset = DAT$offset, site.weights = DAT$weights,
-        family = "poisson",
-        tree.complexity = 3,
-        learning.rate = RATE,
-        bag.fraction = 0.5))
-    if (is.null(out)) {
-        out <- try(gbm.step(DAT,
-            gbm.y = 1,
-            gbm.x = 4:ncol(DAT),
-            offset = DAT$offset, site.weights = DAT$weights,
-            family = "poisson",
-            tree.complexity = 3,
-            learning.rate = RATE/10,
-            bag.fraction = 0.5))
-    }
+    attr(out, "__settings__") <- list(
+        species=spp, region=BCR, iteration=b, elapsed=proc.time()["elapsed"]-t0)
     out
 }
 
 cat("OK\n* Start running models:")
 set.seed(as.integer(Sys.time()))
 while (length(TOGO) > 0) {
-    #SET <- sample(TOGO)[seq_len(min(length(TOGO), length(cl)))]
-    SET <- TOGO[seq_len(min(length(TOGO), length(cl)))]
-    cat("\n  -", length(TOGO), "more pieces to go -", date(), "... ")
-    if (interactive())
-        flush.console()
+    spp <- sample(TOGO, 1)
     #system.time(hhh <- run_brt2("CAWA-BCR_6", ntree=100))
     #res <- lapply(X=SET, fun=run_brt2, SUB=SUB, RATE=0.001, ntree = 100)
     res <- parLapply(cl=cl, X=SET, fun=run_brt1, SUB=SUB, RATE=0.001)
