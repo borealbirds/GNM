@@ -202,6 +202,8 @@ for (i in u) {
     cat("BCR", i, "\n")
     BCR <- paste0("BCR_", i)
     if (i %% 100 == 0) {
+        z <- as.matrix(dd2[dd[,BCR] == 1L, cnUS[cnUS != "nalc"]])
+        SD <- apply(z, 2, sd)
         CN[[BCR]] <- unique(c("nalc", "ROAD", cnUS))
     } else {
         z <- as.matrix(dd2[dd[,BCR] == 1L, cnCan[cnCan != "nalc"]])
@@ -253,6 +255,8 @@ for (i in colnames(detbcr)) {
 #'
 data.frame(n=colSums(is.na(dd)))
 data.frame(n=colSums(is.na(dd2)))
+#' cluster + year IDs
+dd$cyid <- interaction(dd$cid, dd$YEAR, sep="_", drop=TRUE)
 #' Save
 save(dd, dd2, yy, off, spt, u, CN, nsub, detbcr, SPPBCR, cnCan, cnUS,
     file=file.path(ROOT, "data", "BAMdb-GNMsubset-2020-01-08.RData"))

@@ -33,20 +33,18 @@ summary(nc[nc>0])
 hist(nt[nt>0])
 hist(nc[nc>0])
 
+## bootstrap based estimation (no xv)
+
 library(parallel)
 library(mefa4)
 library(gbm)
-library(dismo)
 
-fn <- "BAMdb-GNMsubset-2019-10-29.RData"
+fn <- "BAMdb-GNMsubset-2020-01-08.RData"
 PROJ <- "run3"
 load(file.path("d:/bam/BAM_data_v2019/gnm", "data", fn))
 load("d:/bam/BAM_data_v2019/gnm/out/xvinfo.RData")
-load("d:/bam/BAM_data_v2019/gnm/data/cid.RData")
 
-dd$cid <- cid[rownames(dd)]
-dd$cyid <- interaction(dd$cid, dd$YEAR, sep="_", drop=TRUE)
-
+## number of surveys vs cid/year blocks
 z <- data.frame(reg=colnames(dd)[grepl("BCR_", colnames(dd))],
     n=sapply(colnames(dd)[grepl("BCR_", colnames(dd))], function(i) {
         sum(dd[,i] == 1L)
@@ -55,7 +53,58 @@ z <- data.frame(reg=colnames(dd)[grepl("BCR_", colnames(dd))],
         nlevels(droplevels(dd$cyid[dd[,i] == 1L]))
     }))
 
-RUN <- "ALFL-BCR_70"
+## explore XV results
+tmp <- strsplit(names(xvinfo), "-")
+x <- data.frame(sppbcr=names(xvinfo),
+    spp=sapply(tmp, "[[", 1),
+    bcr=sapply(tmp, "[[", 2),
+    nt=sapply(xvinfo, "[[", "ntree"),
+    vi=sapply(xvinfo, function(z)
+        length(z$varimp[z$varimp > 0])))
+x <- x[x$vi>0 & x$nt>0,]
+x$pocc <- colMeans(yy>0)[as.character(x$spp)]
+x$pbcr <- 0
+for (i in levels(x$bcr)) {
+    cm <- colMeans(yy[dd[[i]] > 0,]>0)
+    x$pbcr[x$bcr == i] <- cm[as.character(x$spp[x$bcr == i])]
+}
+summary(x)
+
+if (FALSE) {
+hist(x$nt)
+hist(x$vi)
+plot(nt ~ pocc,x)
+plot(nt ~ pbcr,x)
+
+m10 <- lm(nt ~ 1, x)
+m11 <- lm(nt ~ bcr, x)
+m12 <- lm(nt ~ spp, x)
+m13 <- lm(nt ~ spp + bcr, x)
+m14 <- lm(nt ~ pocc, x)
+
+m20 <- lm(vi ~ 1, x)
+m21 <- lm(vi ~ bcr, x)
+m22 <- lm(vi ~ spp, x)
+m23 <- lm(vi ~ spp + bcr, x)
+
+AIC(m10,m11,m12, m13, m14) # ntree depends on the species, region is negligible
+c(summary(m10)$r.squared,
+summary(m11)$r.squared,
+summary(m12)$r.squared,
+summary(m13)$r.squared)
+
+AIC(m20,m21,m22, m23) # no. of vars depends on the region more than on spp
+c(summary(m20)$r.squared,
+summary(m21)$r.squared,
+summary(m22)$r.squared,
+summary(m23)$r.squared)
+}
+
+ntmax <- aggregate(x$nt, list(spp=x$spp), max)
+ntmax <- structure(ntmax$x, names=as.character(ntmax$spp))
+
+#RUN <- "ALFL-BCR_70"
+#b=1
 
 ## b: bootstrap id (>= 1)
 ## RUN: SPP-BCR_NO tag
@@ -65,8 +114,17 @@ run_brt_boot <- function(b, RUN, verbose=interactive()) {
     tmp <- strsplit(RUN, "-")[[1L]]
     spp <- tmp[1L]
     BCR <- tmp[2L]
-    nt <- xvinfo[[RUN]]$ntree
-    cn <- names(xvinfo[[RUN]]$varimp)[xvinfo[[RUN]]$varimp > 0]
+    bcr <- as.integer(strsplit(BCR, "_")[[1L]][2L])
+    if (bcr %% 100 == 0) {
+        ## US all clim+topo
+        cn <- CN[[BCR]]
+        nt <- ntmax[spp]
+    } else {
+        ## Canada: based on XV
+        cn <- names(xvinfo[[RUN]]$varimp)[xvinfo[[RUN]]$varimp > 0]
+        nt <- xvinfo[[RUN]]$ntree
+    }
+
     ## create data subset for BCR unit
     ss <- dd[,BCR] == 1L
     DAT <- data.frame(
@@ -88,7 +146,8 @@ run_brt_boot <- function(b, RUN, verbose=interactive()) {
             sprintf("0 detections for %s in %s", spp, BCR),
             class="try-error")
     } else {
-        cat("\nFitting gbm::gbm for", spp, "in", BCR, "/ b =", b, "/ n =",nrow(DAT), "\n")
+        if (verbose)
+            cat("\nFitting gbm::gbm for", spp, "in", BCR, "/ b =", b, "/ n =",nrow(DAT), "\n")
         out <- try(gbm::gbm(DAT$count ~ . + offset(DAT$offset),
             data=DAT[,-(1:3)],
             n.trees = nt,
@@ -109,4 +168,45 @@ run_brt_boot <- function(b, RUN, verbose=interactive()) {
 
 x <- run_brt_boot(1, RUN)
 attr(x, "__settings__")
+
+spp <- "OVEN"
+res <- list()
+for (i in u) {
+    cat("Fitting gbm::gbm for", spp, "in BCR", i, "\n")
+    RUN <- paste0(spp, "-BCR_", i)
+    res[[paste0("BCR_", i)]] <- run_brt_boot(1, RUN, verbose=FALSE)
+}
+save(res, file="d:/bam/BAM_data_v2019/gnm/out/test/oven.RData")
+
+spp <- "OSFL"
+res <- list()
+for (i in u) {
+    cat("Fitting gbm::gbm for", spp, "in BCR", i, "\n")
+    RUN <- paste0(spp, "-BCR_", i)
+    res[[paste0("BCR_", i)]] <- run_brt_boot(1, RUN, verbose=FALSE)
+}
+save(res, file="d:/bam/BAM_data_v2019/gnm/out/test/osfl.RData")
+
+spp <- "CAWA"
+res <- list()
+for (i in u) {
+    cat("Fitting gbm::gbm for", spp, "in BCR", i, "\n")
+    RUN <- paste0(spp, "-BCR_", i)
+    res[[paste0("BCR_", i)]] <- run_brt_boot(1, RUN, verbose=FALSE)
+}
+save(res, file="d:/bam/BAM_data_v2019/gnm/out/test/cawa.RData")
+
+
+load("d:/bam/BAM_data_v2019/gnm/out/test/oven.RData")
+oven <- data.frame(time=sapply(res, function(z) attr(z, "__settings__")$elapsed),
+    size=sapply(res, object.size))
+
+load("d:/bam/BAM_data_v2019/gnm/out/test/osfl.RData")
+osfl <- data.frame(time=sapply(res, function(z) attr(z, "__settings__")$elapsed),
+    size=sapply(res, object.size))
+
+load("d:/bam/BAM_data_v2019/gnm/out/test/cawa.RData")
+cawa <- data.frame(time=sapply(res, function(z) attr(z, "__settings__")$elapsed),
+    size=sapply(res, object.size))
+
 
