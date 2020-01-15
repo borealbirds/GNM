@@ -6,107 +6,25 @@ PROJ <- "boot"
 ## output directory
 OUTDIR <- if (interactive())
     paste0("d:/bam/BAM_data_v2019/gnm/out/", PROJ) else paste0("/scratch/psolymos/out/", PROJ)
-## cli arguments
-#bcr <- NULL
-#SUB <- NULL
-#if (!interactive()) {
-#    args <- commandArgs(trailingOnly = TRUE)
-#    ## if 1 arg provided, it is BCR
-#    if (length(args) >= 1) {
-#        bcr <- args[1L]
-#        if (as.integer(bcr) == 0L)
-#            bcr <- NULL
-#    }
-#    ## if 2nd arg provided, it is subset size
-#    if (length(args) >= 2) {
-#        SUB <- as.integer(commandArgs(trailingOnly = TRUE)[2L])
-#    }
-#}
-#if (is.null(bcr))
-#    stop("BCR must be specified")
-#cat("* Using BCR:\n")
-#print(bcr)
-#if (!is.null(SUB))
-#    cat("* Sample size set to", SUB, "\n")
-
-## test suite uses limited sets
-TEST <- FALSE
-if (TEST) {
-    cat("* Note: this is a test run!\n")
-}
 
 cat("* Loading packages and sourcing functions:")
 library(parallel)
 library(mefa4)
 library(gbm)
 
-## Create an array from the NODESLIST environnement variable
-if (interactive()) {
-    nodeslist <- 2
-    setwd("d:/bam/BAM_data_v2019/gnm")
-} else {
-    cat("OK\n* Getting nodes list ... ")
-    nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
-    cat("OK\n  Nodes list:\n")
-    print(nodeslist)
-}
-
-cat("OK\n* Loading data on master ... ")
-load(file.path("data", fn))
-load(file.path("data", "xvinfo.RData"))
-## get max tree size for each species to inform US models
-tmp <- strsplit(names(xvinfo), "-")
-x <- data.frame(sppbcr=names(xvinfo),
-    spp=sapply(tmp, "[[", 1),
-    bcr=sapply(tmp, "[[", 2),
-    nt=sapply(xvinfo, "[[", "ntree"),
-    vi=sapply(xvinfo, function(z)
-        length(z$varimp[z$varimp > 0])))
-x <- x[x$vi>0 & x$nt>0,]
-x$pocc <- colMeans(yy>0)[as.character(x$spp)]
-x$pbcr <- 0
-for (i in levels(x$bcr)) {
-    cm <- colMeans(yy[dd[[i]] > 0,]>0)
-    x$pbcr[x$bcr == i] <- cm[as.character(x$spp[x$bcr == i])]
-}
-ntmax <- aggregate(x$nt, list(spp=x$spp), max)
-ntmax <- structure(ntmax$x, names=as.character(ntmax$spp))
-
-## Create the cluster with the nodes name.
-## One process per count of node name.
-## nodeslist = node1 node1 node2 node2, means we are starting 2 processes
-## on node1, likewise on node2.
-cat("* Spawning workers...")
-cl <- makePSOCKcluster(nodeslist, type = "PSOCK")
-
-cat("OK\n* Loading packages on workers ... ")
-tmpcl <- clusterEvalQ(cl, library(mefa4))
-tmpcl <- clusterEvalQ(cl, library(gbm))
-
-cat("OK\n* Exporting and data loading on workers ... ")
-if (interactive())
-    tmpcl <- clusterEvalQ(cl, setwd("d:/bam/BAM_data_v2019/gnm"))
-clusterExport(cl, c("dd", "dd2", "off", "yy", "CN", "PROJ", "xvinfo", "ntmax", "OUTDIR"))
-
-cat("OK\n* Establishing checkpoint ... ")
-SPP <- colnames(yy)
-
-
-DONE <- list.files(OUTDIR)
-TOGO <- setdiff(SPP, DONE)
-
-
-run_brt_boot <- function(b, spp, OUTDIR) {
+run_brt_boot <- function(b, spp) {
     sppbcr <- SPPBCR[grep(spp, SPPBCR)]
+    bcr <- strsplit(RUN, "-")[[1]][2]
+    if (!dir.exists(paste0(OUTDIR, "/", spp)))
+        dir.create(paste0(OUTDIR, "/", spp))
+    if (!dir.exists(paste0(OUTDIR, "/", spp, "/",bcr)))
+        dir.create(paste0(OUTDIR, "/", spp, "/",bcr))
     for (RUN in sppbcr) {
-        bcr <- strsplit(RUN, "-")[[1]][2]
         out <- .run_brt_boot(b, RUN)
-        if (!dir.exists(paste0(OUTDIR, "/", spp, "/",bcr)))
-            dir.create(paste0(OUTDIR, "/", spp, "/",bcr))
         save(out, file=paste0(OUTDIR, "/", spp, "/",bcr, "/gnmboot-",
             spp, "-", bcr, "-", b, ".RData"))
     }
-    invisible(NULL)
+    invisible(TRUE)
 }
 
 ## b: bootstrap id (>= 1)
@@ -169,27 +87,71 @@ run_brt_boot <- function(b, spp, OUTDIR) {
     out
 }
 
+## Create an array from the NODESLIST environnement variable
+if (interactive()) {
+    nodeslist <- 2
+    setwd("d:/bam/BAM_data_v2019/gnm")
+} else {
+    cat("OK\n* Getting nodes list ... ")
+    nodeslist <- unlist(strsplit(Sys.getenv("NODESLIST"), split=" "))
+    cat("OK\n  Nodes list:\n")
+    print(nodeslist)
+}
+
+cat("OK\n* Loading data on master ... ")
+load(file.path("data", fn))
+load(file.path("data", "xvinfo.RData"))
+## get max tree size for each species to inform US models
+tmp <- strsplit(names(xvinfo), "-")
+x <- data.frame(sppbcr=names(xvinfo),
+    spp=sapply(tmp, "[[", 1),
+    bcr=sapply(tmp, "[[", 2),
+    nt=sapply(xvinfo, "[[", "ntree"),
+    vi=sapply(xvinfo, function(z)
+        length(z$varimp[z$varimp > 0])))
+x <- x[x$vi>0 & x$nt>0,]
+x$pocc <- colMeans(yy>0)[as.character(x$spp)]
+x$pbcr <- 0
+for (i in levels(x$bcr)) {
+    cm <- colMeans(yy[dd[[i]] > 0,]>0)
+    x$pbcr[x$bcr == i] <- cm[as.character(x$spp[x$bcr == i])]
+}
+ntmax <- aggregate(x$nt, list(spp=x$spp), max)
+ntmax <- structure(ntmax$x, names=as.character(ntmax$spp))
+
+## Create the cluster with the nodes name.
+## One process per count of node name.
+## nodeslist = node1 node1 node2 node2, means we are starting 2 processes
+## on node1, likewise on node2.
+cat("* Spawning workers...")
+cl <- makePSOCKcluster(nodeslist, type = "PSOCK")
+
+cat("OK\n* Loading packages on workers ... ")
+tmpcl <- clusterEvalQ(cl, library(mefa4))
+tmpcl <- clusterEvalQ(cl, library(gbm))
+
+cat("OK\n* Exporting and data loading on workers ... ")
+if (interactive())
+    tmpcl <- clusterEvalQ(cl, setwd("d:/bam/BAM_data_v2019/gnm"))
+clusterExport(cl, c("dd", "dd2", "off", "yy", "CN",
+    "PROJ", "xvinfo", "ntmax", "OUTDIR", "SPPBCR", ".run_brt_boot"))
+
+cat("OK\n* Establishing checkpoint ... ")
+SPP <- colnames(yy)
+DONE <- list.files(OUTDIR)
+TOGO <- setdiff(SPP, DONE)
+
 cat("OK\n* Start running models:")
 set.seed(as.integer(Sys.time()))
-while (length(TOGO) > 0) {
+ncl <- if (interactive())
+    nodeslist else length(nodeslist)
+#while (length(TOGO) > 0) {
+for (counter in 1:5) { # run only 5 species (~10hrs)
     spp <- sample(TOGO, 1)
-    #system.time(hhh <- run_brt2("CAWA-BCR_6", ntree=100))
-    #res <- lapply(X=SET, fun=run_brt2, SUB=SUB, RATE=0.001, ntree = 100)
-    res <- parLapply(cl=cl, X=SET, fun=run_brt1, SUB=SUB, RATE=0.001)
-    #res <- parLapply(cl=cl, X=SET, fun=run_brt2, SUB=SUB, RATE=0.001,
-    #    ntree = if (interactive() || TEST) 100 else NULL)
-    names(res) <- SET
-    cat("OK")
-    for (i in SET) {
-        cat("\n    > Saving:", i, "... ")
-        out <- res[[i]]
-        #saveRDS(out, file=paste0("out/", PROJ, "/", if (TEST) "00test_" else "", i, ".RData"))
-        save(out, file=paste0("/scratch/psolymos/out/", PROJ, "/", if (TEST) "00test_" else "", i, ".RData"))
-        cat("OK")
-    }
-    DONE <- as.character(
-        sapply(strsplit(list.files(paste0("/scratch/psolymos/out/", PROJ)), ".", fixed=TRUE), function(z) z[1L]))
-    TOGO <- setdiff(SPPBCRss, DONE)
+    #res <- lapply(X=seq_len(ncl), fun=run_brt_boot, spp=spp)
+    parLapply(cl=cl, X=seq_len(ncl), fun=run_brt_boot, spp=spp)
+    DONE <- list.files(OUTDIR)
+    TOGO <- setdiff(SPP, DONE)
 }
 
 ## Releaseing resources.
