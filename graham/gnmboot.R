@@ -14,14 +14,14 @@ library(gbm)
 
 run_brt_boot <- function(b, spp) {
     sppbcr <- SPPBCR[grep(spp, SPPBCR)]
-    bcr <- strsplit(RUN, "-")[[1]][2]
     if (!dir.exists(paste0(OUTDIR, "/", spp)))
         dir.create(paste0(OUTDIR, "/", spp))
-    if (!dir.exists(paste0(OUTDIR, "/", spp, "/",bcr)))
-        dir.create(paste0(OUTDIR, "/", spp, "/",bcr))
     for (RUN in sppbcr) {
+        bcr <- strsplit(RUN, "-")[[1]][2]
+        if (!dir.exists(paste0(OUTDIR, "/", spp, "/", bcr)))
+            dir.create(paste0(OUTDIR, "/", spp, "/", bcr))
         out <- .run_brt_boot(b, RUN)
-        save(out, file=paste0(OUTDIR, "/", spp, "/",bcr, "/gnmboot-",
+        save(out, file=paste0(OUTDIR, "/", spp, "/", bcr, "/gnmboot-",
             spp, "-", bcr, "-", b, ".RData"))
     }
     invisible(TRUE)
