@@ -13,16 +13,20 @@ library(mefa4)
 library(gbm)
 
 run_brt_boot <- function(b, spp) {
-    sppbcr <- SPPBCR[grep(spp, SPPBCR)]
+    #sppbcr <- SPPBCR[grep(spp, SPPBCR)]
+    sppbcr <- paste0(spp, "-BCR_", u)
     if (!dir.exists(paste0(OUTDIR, "/", spp)))
         dir.create(paste0(OUTDIR, "/", spp))
     for (RUN in sppbcr) {
         bcr <- strsplit(RUN, "-")[[1]][2]
         if (!dir.exists(paste0(OUTDIR, "/", spp, "/", bcr)))
             dir.create(paste0(OUTDIR, "/", spp, "/", bcr))
-        out <- .run_brt_boot(b, RUN)
-        save(out, file=paste0(OUTDIR, "/", spp, "/", bcr, "/gnmboot-",
-            spp, "-", bcr, "-", b, ".RData"))
+        fout <- paste0(OUTDIR, "/", spp, "/", bcr, "/gnmboot-",
+            spp, "-", bcr, "-", b, ".RData")
+        if (!file.exists(fout)) {
+            out <- .run_brt_boot(b, RUN)
+            save(out, file=fout)
+        }
     }
     invisible(TRUE)
 }
@@ -134,7 +138,7 @@ cat("OK\n* Exporting and data loading on workers ... ")
 if (interactive())
     tmpcl <- clusterEvalQ(cl, setwd("d:/bam/BAM_data_v2019/gnm"))
 clusterExport(cl, c("dd", "dd2", "off", "yy", "CN",
-    "PROJ", "xvinfo", "ntmax", "OUTDIR", "SPPBCR", ".run_brt_boot"))
+    "PROJ", "xvinfo", "ntmax", "OUTDIR", "SPPBCR", "u", ".run_brt_boot"))
 
 cat("OK\n* Establishing checkpoint ... ")
 SPP <- colnames(yy)
@@ -146,8 +150,9 @@ set.seed(as.integer(Sys.time()))
 ncl <- if (interactive())
     nodeslist else length(nodeslist)
 #while (length(TOGO) > 0) {
-for (counter in 1:5) { # run only 5 species (~10hrs)
+for (counter in 1:10) { # run only 5 species (~10hrs)
     spp <- sample(TOGO, 1)
+    cat("\n  -", length(DONE), "done,", length(TOGO), "more to go, doing", spp, "on", date(), "... ")
     #res <- lapply(X=seq_len(ncl), fun=run_brt_boot, spp=spp)
     parLapply(cl=cl, X=seq_len(ncl), fun=run_brt_boot, spp=spp)
     DONE <- list.files(OUTDIR)
