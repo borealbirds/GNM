@@ -209,4 +209,159 @@ load("d:/bam/BAM_data_v2019/gnm/out/test/cawa.RData")
 cawa <- data.frame(time=sapply(res, function(z) attr(z, "__settings__")$elapsed),
     size=sapply(res, object.size))
 
+## checking completeness and running missing pieces
+library(mefa4)
+library(gbm)
+## load objects
+fn <- "BAMdb-GNMsubset-2020-01-08.RData"
+PROJ <- "boot"
+load(file.path("d:/bam/BAM_data_v2019/gnm", "data", fn))
+load("d:/bam/BAM_data_v2019/gnm/out/xvinfo.RData")
+## explore XV results
+tmp <- strsplit(names(xvinfo), "-")
+x <- data.frame(sppbcr=names(xvinfo),
+    spp=sapply(tmp, "[[", 1),
+    bcr=sapply(tmp, "[[", 2),
+    nt=sapply(xvinfo, "[[", "ntree"),
+    vi=sapply(xvinfo, function(z)
+        length(z$varimp[z$varimp > 0])))
+x <- x[x$vi>0 & x$nt>0,]
+x$pocc <- colMeans(yy>0)[as.character(x$spp)]
+x$pbcr <- 0
+for (i in levels(x$bcr)) {
+    cm <- colMeans(yy[dd[[i]] > 0,]>0)
+    x$pbcr[x$bcr == i] <- cm[as.character(x$spp[x$bcr == i])]
+}
+ntmax <- aggregate(x$nt, list(spp=x$spp), max)
+ntmax <- structure(ntmax$x, names=as.character(ntmax$spp))
+
+SPP <- colnames(yy)
+DIRS <- list.files(file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ))
+BCR <- paste0("BCR_", u)
+B <- 32
+
+CHUNK <- list()
+for (spp in DIRS) {
+    d1 <- list.files(file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ, spp))
+    for (bcr in BCR) {
+        i <- paste0(spp, "-", bcr)
+        if (dir.exists(file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ, spp, bcr))) {
+            d2 <- list.files(file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ, spp, bcr))
+            if (length(d2)) {
+                b <- sort(as.integer(sapply(strsplit(sapply(strsplit(d2, "\\."), "[[", 1), "-"), "[[", 4)))
+                MISSING <- setdiff(1:B, b)
+            } else {
+                MISSING <- 1:B
+            }
+            if (length(MISSING))
+                CHUNK[[i]] <- MISSING
+        } else {
+            CHUNK[[i]] <- 1:B
+        }
+    }
+}
+
+.run_brt_boot_test <- function(b, RUN, verbose=interactive()) {
+    t0 <- proc.time()["elapsed"]
+    ## parse input
+    tmp <- strsplit(RUN, "-")[[1L]]
+    spp <- tmp[1L]
+    BCR <- tmp[2L]
+    bcr <- as.integer(strsplit(BCR, "_")[[1L]][2L])
+    if (bcr %% 100 == 0) {
+        ## US all clim+topo
+        cn <- CN[[BCR]]
+        nt <- ntmax[spp]
+    } else {
+        ## Canada: based on XV
+        cn <- names(xvinfo[[RUN]]$varimp)[xvinfo[[RUN]]$varimp > 0]
+        nt <- xvinfo[[RUN]]$ntree
+    }
+
+    ## create data subset for BCR unit
+    ss <- dd[,BCR] == 1L
+    DAT <- data.frame(
+        count=as.numeric(yy[ss, spp]),
+        offset=off[ss, spp],
+        #weights=dd$wi[ss],
+        cyid=dd$cyid[ss],
+        YEAR=dd$YEAR[ss],
+        ARU=dd$ARU[ss], # ARU added here, but not as layer
+        dd2[ss, cn])
+    ## subsample based on 2.5x2.5km^2 cell x year units
+    DAT <- DAT[sample.int(nrow(DAT)),]
+    DAT <- DAT[!duplicated(DAT$cyid),]
+    if (b > 1)
+        DAT <- DAT[sample.int(nrow(DAT), replace=TRUE),]
+    ## 0 detection output
+    if (sum(DAT$count) < 1) {
+        out <- structure(
+            sprintf("0 detections for %s in %s", spp, BCR),
+            class="try-error")
+    } else {
+        out <- TRUE
+    }
+    attr(out, "__settings__") <- list(
+        species=spp, region=BCR, iteration=b, elapsed=proc.time()["elapsed"]-t0)
+    out
+}
+
+## now only saving 0 detection output
+for (i in names(CHUNK)) {
+    cat("\n", i)
+    flush.console()
+    tmp <- strsplit(i, "-")[[1]]
+    spp <- tmp[1]
+    bcr <- tmp[2]
+    dr <- file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ, spp, bcr)
+    if (!dir.exists(dr))
+        dir.create(dr)
+    for (b in CHUNK[[i]]) {
+        cat(".")
+        flush.console()
+        out <- .run_brt_boot_test(b, i)
+        if (inherits(out, "try-error"))
+            save(out, file=file.path(dr, paste0("gnmboot-", spp, "-", bcr, "-", b, ".RData")))
+    }
+}
+
+## scan again
+CHUNK <- list()
+for (spp in DIRS) {
+    d1 <- list.files(file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ, spp))
+    for (bcr in BCR) {
+        i <- paste0(spp, "-", bcr)
+        if (dir.exists(file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ, spp, bcr))) {
+            d2 <- list.files(file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ, spp, bcr))
+            if (length(d2)) {
+                b <- sort(as.integer(sapply(strsplit(sapply(strsplit(d2, "\\."), "[[", 1), "-"), "[[", 4)))
+                MISSING <- setdiff(1:B, b)
+            } else {
+                MISSING <- 1:B
+            }
+            if (length(MISSING))
+                CHUNK[[i]] <- MISSING
+        } else {
+            CHUNK[[i]] <- 1:B
+        }
+    }
+}
+
+## these are the missing ones (Timeout on Graham)
+for (i in names(CHUNK)) {
+    tmp <- strsplit(i, "-")[[1]]
+    spp <- tmp[1]
+    bcr <- tmp[2]
+    dr <- file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ, spp, bcr)
+    if (!dir.exists(dr))
+        dir.create(dr)
+    for (b in CHUNK[[i]]) {
+        cat(i, b, "\n")
+        flush.console()
+        out <- .run_brt_boot(b, i)
+        save(out, file=file.path(dr, paste0("gnmboot-", spp, "-", bcr, "-", b, ".RData")))
+    }
+}
+
+
 
