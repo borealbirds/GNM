@@ -41,6 +41,14 @@ for (i in u[u>=200]) {
     saveRDS(ND, file=file.path(ROOT, paste0("STACK-ND-BCR_", i, ".rds")))
 
 }
+## save raster templates
+for (BCR in u) {
+    cat(BCR, "\n")
+    r1 <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", BCR, "all_1km.grd")))
+    values(r1)[!is.na(values(r1))] <- 1
+    writeRaster(r1,
+        file.path(ROOT, "data", "templates", paste0("bcr-template-", BCR, ".grd")))
+}
 }
 
 predict_gbm <- function(brt, ND, r1, impute=0) {
@@ -236,6 +244,7 @@ bluegreen.colors <- function(n) {
 }
 
 SUB <- readOGR(dsn=file.path(ROOT, "data", "sub-bound"), "BCRSubunits")
+SUB2 <- readOGR(dsn=file.path(ROOT, "data", "sub-bound2"), "BCRunits2")
 BCR <- readOGR(dsn=file.path(ROOT, "data", "bcr"), "bcrfinallcc")
 PROV <- readOGR(dsn=file.path(ROOT, "data", "prov"), "province_state_line")
 LAKES <- readOGR(dsn=file.path(ROOT, "data", "lakes"), "lakes_lcc")
@@ -275,9 +284,9 @@ for (spp in SPP) {
 
 
 ## experiment with random buffering
-for (spp in c("OSFL", "OVEN", "BBWA")) {
 #BCRs <- c(71, 80, 81)
 BCRs <- u[u < 200]
+for (spp in c("OSFL", "OVEN", "BBWA")) {
 
 B <- 32
 st <- list()

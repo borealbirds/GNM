@@ -240,6 +240,30 @@ DIRS <- list.files(file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ))
 BCR <- paste0("BCR_", u)
 B <- 32
 
+## graham stuff
+if (FALSE) {
+CHUNK <- list()
+for (spp in DIRS) {
+    d1 <- list.files(file.path("/scratch/psolymos", "out", PROJ, spp))
+    for (bcr in BCR) {
+        i <- paste0(spp, "-", bcr)
+        if (dir.exists(file.path("/scratch/psolymos", "out", PROJ, spp, bcr))) {
+            d2 <- list.files(file.path("/scratch/psolymos", "out", PROJ, spp, bcr))
+            if (length(d2)) {
+                b <- sort(as.integer(sapply(strsplit(sapply(strsplit(d2, "\\."), "[[", 1), "-"), "[[", 4)))
+                MISSING <- setdiff(1:B, b)
+            } else {
+                MISSING <- 1:B
+            }
+            if (length(MISSING))
+                CHUNK[[i]] <- MISSING
+        } else {
+            CHUNK[[i]] <- 1:B
+        }
+    }
+}
+}
+
 CHUNK <- list()
 for (spp in DIRS) {
     d1 <- list.files(file.path("d:/bam/BAM_data_v2019/gnm", "out", PROJ, spp))
