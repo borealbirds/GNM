@@ -151,6 +151,24 @@ for (i in u) {
     }
 }
 sum(keep)
+# gap analysis data: 1km^2 res sampling intensity
+if (FALSE) {
+    xy <- st_coordinates(sf)
+    bb <- bbox(xy)
+    r <- raster(
+        xmn=bb["x", "min"],
+        xmx=bb["x", "max"],
+        ymn=bb["y", "min"],
+        ymx=bb["y", "max"],
+        res=1000,
+        crs=st_crs(sf)$proj4string)
+    sr1k <- rasterize(xy, r, field=1, fun='sum')
+    xyz <- cbind(xyFromCell(sr1k, 1:length(sr1k)), z=values(sr1k))
+    summary(xyz)
+    table(xyz[,3], useNA="a")
+    xyz <- xyz[!is.na(xyz[,3]),]
+    save(xyz, file=file.path(ROOT, "data", "BAMdb-sampling-intensity-1km-2020-02-05.RData"))
+}
 #' Subset
 ss <- rownames(dd2)[keep]
 dd <- dd[ss,]
