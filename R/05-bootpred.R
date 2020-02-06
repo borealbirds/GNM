@@ -301,8 +301,8 @@ for (i in 1:B) {
         ## sigmoid cdf: plot(ecdf(rbeta(10^3, 2, 2)))
         w <- rbeta(1, 2, 2)
         pb <- rgeos::gBuffer(p, width=w * 100*10^3)
-        ri <- raster(file.path(ROOT, "artifacts2", spp, "parts",
-            paste0("mosaic-", spp, "-BCR_", bcr, "-boot-", bi, ".tif")))
+        ri <- raster(file.path(ROOT, "out", "parts", spp,
+            paste0("pred-", spp, "-BCR_", bcr, "-boot-", bi, ".tif")))
         pb <- rgeos::gBuffer(p, width=w * 100 * 10^3)
         if (bcr == BCRs[1]) {
             rout <- mask(ri, pb)
