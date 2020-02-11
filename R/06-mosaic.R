@@ -60,7 +60,7 @@ for (spp in SPP) {
 }
 
 
-## -------- making & plotting Canada-wide mean & SD layers -----------
+## -------- making Canada-wide mean & SD layers -----------
 
 for (spp in SPP) {
 
@@ -93,6 +93,8 @@ for (spp in SPP) {
 ## -------- png's of Canada-wide mean & SD layers -----------
 
 for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
 
     rast <- raster(file.path(ROOT, "artifacts", spp, paste0("pred-", spp, "-CAN-Mean.tif")))
     q <- quantile(values(rast), 0.999, na.rm=TRUE)
