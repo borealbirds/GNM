@@ -34,8 +34,8 @@ x <- data.frame(id=spt$Species_ID,
     family=spt$Family_Sci,
     show=rep(TRUE, nrow(spt)))
 head(x)
-writeLines(toJSON(x), "~/repos/borealbirds.github.io/src/data/species.json")
-writeLines(toJSON(x), "~/repos/api/docs/v4/species/index.json")
+#writeLines(toJSON(x), "~/repos/borealbirds.github.io/src/data/species.json")
+#writeLines(toJSON(x), "~/repos/api/docs/v4/species/index.json")
 
 xxx <- x
 rownames(xxx) <- xxx$id
@@ -43,7 +43,7 @@ as.list(droplevels(xxx["ALFL",]))
 
 vv <- data.frame(title=xxx$english, path=paste0("/species/", rownames(xxx)),
     summary=xxx$scientific)
-writeLines(toJSON(vv), "~/repos/borealbirds.github.io/static/search.json")
+#writeLines(toJSON(vv), "~/repos/borealbirds.github.io/static/search.json")
 
 ## species stuff
 
@@ -117,13 +117,14 @@ fden <- function(tmp, atmp, reg, id) {
     )
 }
 
+RES <- list()
 #spp <- "ALFL"
 for (spp in SPP) {
 cat(spp, "\n")
 flush.console()
 x <- read.csv(
     sprintf(
-        "c:/Users/Peter Solymos/GoogleWork/bam/website/%s_densities.csv", spp))
+        "c:/Users/Peter Solymos/GoogleWork/bam/website/summaries/%s_densities.csv", spp))
 
 #str(x)
 #hist(x$mean)
@@ -141,7 +142,7 @@ z <- data.frame(
     nalc=x$nalc,
     landcover=factor(names(LCCs)[match(x$nalc, LCCs)], names(LCCs)),
     bcr=x$BCR,
-    region=factor(names(BCRs)[match(x$BCR, BCRs)], names(BCRs)),
+    region=factor(names(BCRs0)[match(x$BCR, BCRs0)], names(BCRs0)),
     density=x$mean,
     areakmsq=x$area,
     run=x$iter)
@@ -178,7 +179,7 @@ tmp <- sapply(N, rowSums)
 atmp <- rowSums(A)
 Bcr <- lapply(seq_along(atmp), function(i) {
     reg <- paste(names(atmp)[i], names(BCRs)[as.character(BCRs) == names(atmp)[i]])
-    fabu(tmp[,i], atmp[i], reg, spp)
+    fabu(tmp[i,], atmp[i], reg, spp)
 })
 
 #toJSON(c(list(Total), Bcr), pretty=TRUE,auto_unbox=TRUE)
@@ -206,6 +207,7 @@ out <- list(
     species=as.list(droplevels(xxx[spp,])),
     popsize=c(list(Total), Bcr),
     densplot=c(list(Total2), Bcr2))
+RES[[spp]] <- out
 if (!dir.exists(sprintf("~/repos/api/docs/v4/species/%s", spp)))
     dir.create(sprintf("~/repos/api/docs/v4/species/%s", spp))
 writeLines(toJSON(out, auto_unbox=TRUE),
@@ -213,14 +215,89 @@ writeLines(toJSON(out, auto_unbox=TRUE),
 
 }
 
-
 for (spp in SPP) {
 cat(spp, "\n")
 flush.console()
 if (!dir.exists(sprintf("~/repos/api/docs/v4/species/%s/images", spp)))
     dir.create(sprintf("~/repos/api/docs/v4/species/%s/images", spp))
-fin <- sprintf("~/GoogleWork/bam/website/%s_pred1km2.png", spp)
+fin <- sprintf("~/GoogleWork/bam/website/map-images/%s_pred1km2.png", spp)
 fout <- sprintf("~/repos/api/docs/v4/species/%s/images/mean-pred.png", spp)
-file.copy(fin, fout)
+file.copy(fin, fout, overwrite=TRUE)
+
+fin <- sprintf("~/GoogleWork/bam/website/map-images/%s_pred1km3.png", spp)
+fout <- sprintf("~/repos/api/docs/v4/species/%s/images/mean-det.png", spp)
+file.copy(fin, fout, overwrite=TRUE)
 }
+
+## making density figure plots ~ grrrrr plotly/mapbox issues in gridsome !@#$*%
+
+Tab1 <- NULL
+Tab2 <- NULL
+for (x in RES) {
+#x <- RES[[1]]
+    xx <- cbind(
+        as.data.frame(x$species),
+        do.call(rbind, lapply(x$popsize, as.data.frame)))
+    xx$idnext <- xx$idprevious <- xx$french <- xx$show <- xx$family <- NULL
+    Tab1 <- rbind(Tab1, xx)
+    xx <- cbind(
+        as.data.frame(x$species),
+        do.call(rbind, lapply(x$densplot, as.data.frame)))
+    xx$idnext <- xx$idprevious <- xx$french <- xx$show <- xx$family <- NULL
+    Tab2 <- rbind(Tab2, xx)
+}
+colnames(Tab1) <- gsub("\\.", "_", colnames(Tab1))
+colnames(Tab2) <- gsub("data\\.", "", colnames(Tab2))
+
+#Tab2$region0 <- Tab2$region
+Tab2$region <- as.integer(as.character(Tab2$region))
+Tab2$region <- paste(BCRs, names(BCRs))[match(Tab2$region, BCRs)]
+Tab2$region[is.na(Tab2$region)] <- "Canada"
+Tab2$region <- as.factor(Tab2$region)
+
+write.csv(Tab1, row.names = FALSE, file="~/repos/api/docs/v4/BAMv4-abundances-2020-02-20.csv")
+write.csv(Tab2, row.names = FALSE, file="~/repos/api/docs/v4/BAMv4-densities-2020-02-20.csv")
+
+## saving csv files with population size estimates
+
+#spp <- "ALFL"
+r <- levels(Tab2$region)
+#rv <- r[12]
+for (spp in SPP) {
+    for (rv in r) {
+        v <- Tab2[Tab2$id==spp & Tab2$region == rv,]
+        v0 <- Tab2[Tab2$id==spp,]
+
+        est <- v$estimate
+        names(est) <- as.character(v$landcover)
+        g <- strsplit(rv, " ")[[1]]
+        g <- if (length(g) == 1)
+            "can" else g[1]
+        fout <- sprintf("~/repos/api/docs/v4/species/%s/images/dbylc-%s.svg", spp, g)
+        svg(fout, width=8, height=5)
+        op <- par(mar=c(4,8,4,2))
+        tck <- barplot(est, horiz=TRUE, las=1, main=rv, xlab="Density (males/ha)",
+            xlim=c(0, max(v0[,6:8])), col="#007a7c", border=NA)
+        segments(v$lower, tck, est, lwd=3, lend=1, col="white")
+        segments(est, tck, v$upper, lwd=3, lend=1, col="#007a7c")
+        par(op)
+        dev.off()
+    }
+}
+
+lf <- list()
+for (spp in SPP) {
+    lf[[spp]] <- list.files(
+        sprintf("~/repos/api/docs/v4/species/%s/images/", spp))
+}
+
+table(sapply(lf, length))
+names(lf)[sapply(lf, length) < 14]
+
+for (spp in names(lf)[sapply(lf, length) < 14]) {
+fin <- sprintf("~/GoogleWork/bam/website/map-images/%s_pred1km2.png", spp)
+fout <- sprintf("~/repos/api/docs/v4/species/%s/images/mean-det.png", spp)
+file.copy(fin, fout, overwrite=TRUE)
+}
+
 
