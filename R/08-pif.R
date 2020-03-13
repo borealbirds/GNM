@@ -46,3 +46,41 @@ plot(log(Npif) ~ log(Npix), x)
 abline(0,1)
 plot(Npif ~ Npix, x)
 abline(0,1)
+
+## calculate BCR/prov level abundances
+
+library(sp)
+library(raster)
+library(rgdal)
+
+g <- readOGR("d:/bam/BAM_data_v2019/gnm/data/regions/BCR_BAMSubunits.shp")
+g <- spTransform(g, "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=0 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +units=m +no_defs")
+g@data$BCRCode[g@data$BCRCode == 2] <- 200
+g@data$BCRPROV <- paste(g@data$BCRCode, g@data$PROVINCE_S)
+
+gc <- g[g@data$BCRCode < 200,]
+table(gc@data$BCRPROV)
+
+SPP <- list.dirs("d:/bam/BAM_data_v2019/gnm/artifacts",
+    full.names = FALSE, recursive=FALSE)
+
+N <- matrix(0, length(SPP), length(unique(gc@data$BCRPROV)))
+dimnames(N) <- list(SPP, unique(gc@data$BCRPROV))
+
+for (spp in SPP) {
+    fn <- paste0("d:/bam/BAM_data_v2019/gnm/artifacts/",
+        spp, "/pred-", spp, "-CAN-Mean.tif")
+    r <- raster(fn)
+    for (i in unique(gc@data$BCRPROV)) {
+        cat(spp, i)
+        flush.console()
+        gci <- gc[gc@data$BCRPROV == i,]
+        ri <- trim(mask(r, gci))
+        N[spp, i] <- round(100 * sum(values(ri), na.rm=TRUE))
+        cat("\t", round(N[spp, i]/10^6, 2), "\n")
+    }
+}
+
+
+
+
