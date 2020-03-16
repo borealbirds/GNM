@@ -81,6 +81,6 @@ for (spp in SPP) {
     }
 }
 
+save(N, file="d:/bam/BAM_data_v2019/gnm/data/N-by-bcr-prov.RData")
 
-
-
+write.csv(N, file="~/GoogleWork/bam/PIF-AB/N-by-bcr-prov-2020-03-16.csv")
