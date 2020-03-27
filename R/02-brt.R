@@ -5,7 +5,7 @@ library(dismo)
 
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
 PROJ <- "run3"
-load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-10-29.RData"))
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2020-01-08.RData"))
 
 DONE <- sapply(strsplit(list.files(file.path(ROOT, "out", PROJ)), ".", fixed=TRUE), function(z) z[1L])
 
