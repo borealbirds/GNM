@@ -4,12 +4,20 @@ library(mefa4)
 dir <- "d:/bam/BAM_data_v2019/gnm/www/"
 #dir <- "~/GoogleWork/tmp/"
 
-out <- "~/repos/api/v4/"
+out <- "~/repos/api/docs/v4/"
+
+st <- read.csv("d:/bam/2020/speclist.csv")
+rownames(st) <- st$species
+spp_keep <- as.character(st$species)[st$drop==0]
+spp_drop <- as.character(st$species)[st$drop==1]
+
+s <- fromJSON(readLines("~/repos/borealbirds.github.io/static/search.json"))
+writeLines(toJSON(s, pretty=TRUE), "~/repos/borealbirds.github.io/static/search.json")
 
 ## species info
 if (FALSE) {
 e <- new.env()
-load("d:/bam/BAM_data_v2019/gnm/data/BAMdb-GNMsubset-2019-03-01.RData", envir=e)
+load("d:/bam/BAM_data_v2019/gnm/data/BAMdb-GNMsubset-2020-01-08.RData", envir=e)
 
 sp <- data.frame(id=rownames(e$spt),
     e$spt[,c("English_Name", "Scientific_Name", "Family_Sci")])
@@ -18,6 +26,7 @@ for (i in 1:ncol(sp))
     sp[,i] <- as.character(sp[,i])
 colnames(sp) <- c("id", "common", "scientific", "family")
 sp$combo <- paste0(sp$common, " (", sp$scientific, ")")
+sp <- sp[spp_keep,]
 
 writeLines(toJSON(list(data=sp),
     pretty=FALSE, rownames=FALSE),
@@ -169,4 +178,34 @@ writeLines(toJSON(L, pretty=FALSE, rownames=FALSE, dataframe="rows"),
     odat)
 
 }
+
+
+## updating maps for species
+
+st["SOSA", "mapnum2"] <- 6
+st["SOSA", "mapnum1"] <- 5
+
+tmp <- read.csv("~/repos/api/docs/v4/BAMv4-abundances-2020-02-20.csv")
+tmp <- tmp[tmp$id %in% spp_keep,]
+write.csv(tmp, row.names = FALSE, file="~/repos/api/docs/v4/BAMv4-abundances-2020-02-20.csv")
+
+tmp <- read.csv("~/repos/api/docs/v4/BAMv4-densities-2020-02-20.csv")
+tmp <- tmp[tmp$id %in% spp_keep,]
+write.csv(tmp, row.names = FALSE, file="~/repos/api/docs/v4/BAMv4-densities-2020-02-20.csv")
+
+for (spp in spp_keep) {
+
+    unlink(paste0("~/repos/api/docs/v4/species/", spp, "/mean-pred.png"))
+    unlink(paste0("~/repos/api/docs/v4/species/", spp, "/mean-det.png"))
+
+    frpred <- paste0("d:/bam/2020/map-images/", spp, "_pred1km", st[spp, "mapnum1"], ".png")
+    topred <- paste0("~/repos/api/docs/v4/species/", spp, "/images/mean-pred.png")
+    file.copy(frpred, topred, overwrite=TRUE)
+
+    frdet <- paste0("d:/bam/2020/map-images/", spp, "_pred1km", st[spp, "mapnum2"], ".png")
+    todet <- paste0("~/repos/api/docs/v4/species/", spp, "/images/mean-det.png")
+    file.copy(frdet, todet, overwrite=TRUE)
+}
+
+
 
