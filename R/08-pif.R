@@ -84,3 +84,81 @@ for (spp in SPP) {
 save(N, file="d:/bam/BAM_data_v2019/gnm/data/N-by-bcr-prov.RData")
 
 write.csv(N, file="~/GoogleWork/bam/PIF-AB/N-by-bcr-prov-2020-03-16.csv")
+
+## compare BCR/prov results: BAM v4 vs PIF v3
+library(mefa4)
+N <- read.csv("~/GoogleWork/bam/PIF-AB/N-by-bcr-prov-2020-03-16.csv")
+Tab1 <- read.csv("~/repos/api/docs/v4/BAMv4-abundances-2020-02-20.csv")
+Tab2 <- read.csv("~/repos/api/docs/v4/BAMv4-densities-2020-02-20.csv")
+pif <- read.csv("~/GoogleWork/bam/PIF-AB/popBCR-CAN_v3_27-Feb-2019.csv")
+
+compare_sets(Tab1$english, pif$English.Name)
+pif$id1 <- as.character(Tab1$id[match(pif$English.Name, Tab1$english)])
+pif$id2 <- as.character(Tab1$id[match(pif$Scientific.Name, Tab1$scientific)])
+pif$id <- pif$id2
+pif$id[is.na(pif$id2)] <- pif$id1[is.na(pif$id2)]
+compare_sets(Tab1$id, pif$id)
+pif <- pif[!is.na(pif$id) & pif$Country == "CAN",]
+
+SPP <- sort(unique(pif$id))
+
+pif$BCR <- as.factor(pif$BCR)
+pif$N <- as.numeric(gsub(",", "", as.character(pif$Population.Estimate..unrounded.)))
+summary(pif$N)
+pif$N <- pif$N / pif$Pair.Adjust.Category
+pif$N <- pif$N / 10^6
+
+x <- data.frame(species=pif$id, bcr=pif$BCR, prov=pif$Province...State...Territory, Npif=pif$N)
+x <- droplevels(x[!is.na(x$Npif),])
+x$bcr <- as.integer(as.character(x$bcr))
+rownames(x) <- paste(x$species, x$bcr, x$prov, sep="-")
+
+rownames(N) <- N[,1]
+N[[1]] <- NULL
+N <- as.matrix(N)
+pix <- Melt(N)
+pix$cols <- as.character(pix$cols)
+
+cn <- data.frame(cn=colnames(N), stringsAsFactors = FALSE)
+tmp <- strsplit(cn$cn, "\\.")
+bcr <- sapply(tmp, "[[", 1)
+bcr <- substr(bcr, 2, nchar(bcr))
+cn$bcr <- as.integer(bcr)
+prov <- sapply(tmp, function(z) paste(z[-1], collapse=" "))
+pr <- c(
+    ALBERTA = "AB",
+    `BRITISH COLUMBIA` = "BC",
+    MANITOBA = "MB",
+    `NEW BRUNSWICK` = "NB",
+    NEWFOUNDLAND = "NL",
+    `NORTHWEST TERRITORIES` = "NT",
+    `NOVA SCOTIA` = "NS",
+    NUNAVUT = "NU",
+    ONTARIO = "ON",
+    `PRINCE EDWARD ISLAND` = "PE",
+    QUEBEC = "QC",
+    SASKATCHEWAN = "SK",
+    YUKON = "YT")
+cn$prov <- prov
+cn$pr <- pr[match(prov, names(pr))]
+
+pix <- data.frame(pix, cn[match(pix$cols, cn$cn),])
+rownames(pix) <- with(pix, paste(rows, bcr, pr, sep="-"))
+
+compare_sets(rownames(x), rownames(pix))
+x$Npix <- pix$value[match(rownames(x), rownames(pix))]/10^6
+x <- droplevels(x[!is.na(x$Npix),])
+
+x$logNpix <- log(x$Npix)
+x$logNpif <- log(x$Npif)
+
+op <- par(mfrow=c(1,3))
+plot(log(Npif) ~ log(Npix), x)
+abline(0,1)
+plot(Npif ~ Npix, x)
+abline(0,1)
+hist(x$logNpix-x$logNpif)
+par(op)
+
+summary(x$Npix/x$Npif)
+exp(summary(x$logNpix-x$logNpif))
