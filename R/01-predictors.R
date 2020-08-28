@@ -81,6 +81,7 @@ dd2[dd$YEAR >= 2006,] <- dd2011[dd$YEAR >= 2006,] # use 2011 version for 2006- d
 #' Assign BCR subunits to surveys
 #bcrsu <- st_read(file.path(ROOT, "data", "predictors", "subunits", "BCRSubunits.shp"))
 bcrsu <- st_read(file.path(ROOT, "data", "predictors", "subunits", "BCRunits2.shp"))
+st_crs(bcrsu) <- st_crs(sf)
 sf <- sf[rownames(dd),]
 o <- st_join(sf, bcrsu, join = st_intersects)
 o <- o[rownames(dd),]
