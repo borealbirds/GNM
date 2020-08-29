@@ -2,7 +2,6 @@ library(mefa4)
 library(gbm)
 library(raster)
 library(rgdal)
-library(raster)
 
 ## adjust these paths as needed
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
