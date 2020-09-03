@@ -719,6 +719,27 @@ for (spp in SPP) {
     save(BIM, file=file.path(ROOT, "out", "importance", paste0("importance-", spp, ".RData")))
 }
 
+## calculate Canada as rowmeans
+l <- NULL
+for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
+
+    load(file.path(ROOT, "out", "importance", paste0("importance-", spp, ".RData")))
+    BIM <- BIM[,colSums(is.na(BIM))==0,drop=FALSE]
+    BIM <- cbind(BIM, Canada=rowMeans(BIM))
+    bim <- mefa4::Melt(BIM)
+    bim$variable <- as.character(bim$rows)
+    bim$region <- as.character(bim$cols)
+    bim$importance <- bim$value
+    bim$id <- spp
+    l <- rbind(l, bim[,c("id", "variable", "region", "importance")])
+}
+## replace NA with 0
+## melt to get long form (dropping 0/NA combinations)
+## add spp as column
+## combine and format
+write.csv(l, row.names = FALSE, file="www/gnm-validation-importance.csv")
 
 ## putting all together and updating API
 
@@ -729,6 +750,7 @@ CROSS <- read.csv("www/gnm-validation-cross.csv")
 OCCC <- read.csv("www/gnm-validation-occc.csv")
 CAN <- read.csv("www/gnm-validation-canada.csv")
 RES <- read.csv("www/gnm-validation.csv")
+IM <- read.csv("www/gnm-validation-importance.csv")
 
 
 fr <- TAB$french
@@ -800,5 +822,37 @@ cn <- c("id", "scientific", "english", "region",
     "occc", "oprec", "oaccu")
 V <- V[,cn]
 write.csv(V, row.names=FALSE, file="~/repos/api/docs/v4/BAMv4-validation-2020-02-20.csv")
+
+IM <- data.frame(IM, TAB[match(IM$id, TAB$id),])
+IM$u <- as.integer(gsub("BCR_", "", IM$region))
+IM$u[is.na(IM$u)] <- 0
+BCRs <- c(Canada=0, BCRs0)
+IM$region <- names(BCRs)[match(IM$u, BCRs)]
+cn2 <- c("id", "scientific", "english", "region",
+    "variable", "importance")
+IM <- IM[,cn2]
+write.csv(IM, row.names=FALSE, file="~/repos/api/docs/v4/BAMv4-importance-2020-02-20.csv")
+
+
+library(openxlsx)
+
+l <- list(iris = iris, mtcars = mtcars, chickwts = chickwts, quakes = quakes)
+openxlsx::write.xlsx(l, file = "inst/extdata/datasets.xlsx")
+
+fl <- c(
+    metadata="BAMv4-metadata-2020-02-20.csv",
+    species="BAMv4-species-2020-02-20.csv",
+    variables="BAMv4-variables-2020-02-20.csv",
+    importance="BAMv4-importance-2020-02-20.csv",
+    validation="BAMv4-validation-2020-02-20.csv",
+    abundances="BAMv4-abundances-2020-02-20.csv",
+    densities="BAMv4-densities-2020-02-20.csv")
+ll <- list()
+for (i in 1:length(fl)) {
+    ll[[names(fl)[i]]] <- read.csv(paste0("~/repos/api/docs/v4/", fl[i]))
+}
+
+openxlsx::write.xlsx(ll, file = "~/repos/api/docs/v4/BAMv4-results-2020-02-20.xlsx")
+
 
 
