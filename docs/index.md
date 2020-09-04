@@ -1,31 +1,19 @@
 ---
-title: Introduction
+title: Generalized National Model (GNM) docs
 ---
 
-This is the intro.
+Reliable information on species' population sizes, trends, habitat associations, and distributions is important for conservation and land-use planning, as well as status assessment and recovery planning for species at risk. However, the development of such estimates at a national scale is challenged by a variety of factors, including sparse data coverage in remote regions ([Stralberg et al. 2015](http://dx.doi.org/10.1890/13-2289.1)), differential habitat selection across large geographies ([Crosby et al. 2019](https://doi.org/10.1111/ddi.12991)), and variation in survey protocols ([Sólymos et al. 2013](https://doi.org/10.1111/2041-210X.12106)).
 
-[This is a link](https://borealbirds.github.io/).
+With these factors in mind, we developed a generalized analytical approach to model species density in relation to environmental covariates, using the Boreal Avian Modelling Project database of point-count surveys (through 2018) and widely available spatial predictors ([Cumming et al. 2010](https://doi.org/10.7939/R3Z31NW3X), [Barker et al. 2015](http://dx.doi.org/10.1002/wsb.567)). We developed separate models for each geographic region (bird conservation regions intersected by jurisdiction boundaries) based on covariates such as tree species biomass (local and landscape scale), forest age, topography, land use, and climate. We used machine learning to allow for variable interactions and non-linear responses while avoiding time-consuming species-by-species parameterization. We applied cross-validation to avoid overfitting and bootstrap resampling to estimate uncertainty associated with our density estimates.
 
-# Heading 1
+## Contact
 
-## Heading 2
+* [borealbirds.ualberta.ca/](https://borealbirds.ualberta.ca/)
+* [Twitter](https://twitter.com/borealbirds)
+* [GitHub](https://github.com/borealbirds)
 
-### Heading 3
+## Citing the models
 
-#### Heading 4
-
-Txt that is **bold** or *italics*, maybe even `code`.
-
-Items:
-
-* item 1
-* item 2
-
-List:
-
-1. point 1
-2. point 2
-
-![alt text](https://borealbirds.github.io/landing.gif)
-
-
+Boreal Avian Modelling Project, 2020.
+*National density models v4.0*. Available at 
+[https://borealbirds.github.io/](https://borealbirds.github.io/).
