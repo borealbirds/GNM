@@ -9,7 +9,7 @@ With these factors in mind, we developed a generalized analytical approach to mo
 
 ## Contact
 
-* [borealbirds.ualberta.ca/](https://borealbirds.ualberta.ca/)
+* [borealbirds.ualberta.ca](https://borealbirds.ualberta.ca/)
 * [Twitter](https://twitter.com/borealbirds)
 * [GitHub](https://github.com/borealbirds)
 
