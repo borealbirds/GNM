@@ -212,4 +212,4 @@ Let’s read in all the tables and delete the temp file:
 
     hist(rnorm(1000))
 
-![](/applications/index_files/figure-markdown_strict/unnamed-chunk-9-1.png)
+![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-9-1.png)

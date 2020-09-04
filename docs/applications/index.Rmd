@@ -8,7 +8,9 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,
     fig.path="applications/index_files/figure-markdown_strict/")
-knitr::opts_knit$set(base.dir="~/repos/GNM/docs/", base.url="/")
+knitr::opts_knit$set(
+    base.dir="~/repos/GNM/docs/",
+    base.url="https://borealbirds.github.io/GNM/")
 ```
 
 The BAM National Model results are meant to be used in various applications.
