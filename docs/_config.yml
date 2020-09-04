@@ -1,0 +1,23 @@
+title: "BAM Nationa Models"
+description: "Boreal bird models by the Boreal Avian Modelling Project"
+
+baseurl: https://borealbirds.github.io/GNM
+
+include: [".htaccess"]
+exclude: ["README.md", "LICENSE.md"]
+timezone: America/Edmonton
+
+encoding: UTF-8
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+markdown_ext: "markdown,mkdown,mkdn,mkd,md"
+
+author: "Boreal Avian Modelling Project"
+
+#categories: ["Etc", "Talks", "Papers", "Code", "Tutorials"]
+
+gems:
+  - jekyll-feed
+  - jekyll-sitemap

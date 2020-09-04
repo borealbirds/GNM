@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+<title>
+  {% if page.title %}{{ page.title | strip_html }} &#8211; {% endif %}{{
+  site.title }}
+</title>
+<meta
+  name="description"
+  content="{{ page.excerpt | strip_html | normalize_whitespace | truncate: 160 | escape }}"
+/>
+<meta name="keywords" content="{{ page.tags | join: ', ' }}" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="canonical" href="{% if page.canonical %}{{ page.canonical }}{% else %}{{ site.baseurl }}{{ page.url }}{% endif %}"
+/>
+<meta
+  property="og:title"
+  content="{% if page.title %}{{ page.title | strip_html }} &#8211; {% endif %}{{ site.title }}"
+/>
+<meta
+  property="og:description"
+  content="{{ page.excerpt | strip_html | normalize_whitespace | truncate: 160 | escape }}"
+/>
+<meta
+  property="og:image"
+  content="{% if page.image %}{{ page.image }}{% else %}https://unsplash.com/collections/9507373/birds{% endif %}"
+/>
+<meta property="og:type" content="website" />
+<meta property="og:image:width" content="400" />
+<meta property="og:image:height" content="300" />
+<meta property="og:url" content="{{ site.baseurl }}{{ page.url }}" />
+<meta property="og:site_name" content="{{ site.title }}" />
+<meta name="twitter:site" content="@borealbirds" />
+<meta
+  name="twitter:title"
+  content="{% if page.title %}{{ page.title | strip_html }} &#8211; {% endif %}{{ site.title }}"
+/>
+<meta
+  name="twitter:description"
+  content="{{ page.excerpt | strip_html | normalize_whitespace | truncate: 160 | escape }}"
+/>
+<meta name="twitter:url" content="{{ site.baseurl }}{{ page.url }}" />
+
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+
+
+  <link rel="stylesheet" href="https://unpkg.com/bulma@0.9.0/css/bulma.min.css" />
+  <style>
+    nav.navbar {
+      height: 6rem !important;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, .1), 0 1px 2px 0 rgba(0, 0, 0, .06) !important;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- START NAV -->
+  <nav class="navbar">
+    <div class="container">
+      <div class="navbar-brand">
+        <a class="navbar-item" href="{{ site.baseurl }}">
+          <img src="https://borealbirds.github.io/logo.svg" alt="Logo">
+        </a>
+        <span class="navbar-burger burger" data-target="navbarMenu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </span>
+      </div>
+      <div id="navbarMenu" class="navbar-menu">
+        <div class="navbar-end">
+          <a class="navbar-item is-size-5 has-text-weight-semibold"
+          href="{{ site.baseurl }}">
+            Home
+          </a>
+          <a class="navbar-item is-size-5 has-text-weight-semibold"
+          href="{{ site.baseurl }}/methods/">
+            Methods
+          </a>
+          <a class="navbar-item is-size-5 has-text-weight-semibold"
+          href="{{ site.baseurl }}/results/">
+            Results
+          </a>
+          <a class="navbar-item is-size-5 has-text-weight-semibold"
+          href="{{ site.baseurl }}/Applications/">
+            Applications
+          </a>
+        </div>
+      </div>
+    </div>
+  </nav>
+  <!-- END NAV -->
+
+  <!-- Image -->
+  <section class="hero ">
+    <div class="hero-body">
+      <div class="container">
+
+        <section class="section">
+          <div class="columns">
+            <div class="column is-8 is-offset-2">
+              <div class="content is-medium">
+               {% if page.title %}<h1 class="title">{{ page.title }}</h1>{% endif %}
+               {% if page.subtitle %}<h2 class="subtitle is-4">{{ page.subtitle }}</h2>{% endif %}
+                {{ content }}
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="content has-text-centered">
+      <p>
+          &copy; 2020 {{ site.author }} under a <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0 license</a>, source code is licensed
+        <a href="https://opensource.org/licenses/GPL-2.0">GPL-2</a>
+      </p>
+    </div>
+  </footer>
+
+</body>
+
+</html>
