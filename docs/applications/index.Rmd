@@ -3,29 +3,143 @@ title: "Applications"
 output:
   md_document:
     preserve_yaml: true
-    toc: false
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,
+    fig.path="applications/index_files/figure-markdown_strict/")
+knitr::opts_knit$set(base.dir="~/repos/GNM/docs/", base.url="/")
 ```
 
-## R Markdown
+The BAM National Model results are meant to be used in various applications.
+We provide some R scripts here to facilitate the use of the results.
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+## Prerequisites
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+We will assume that you use R version >= 3.6 with the following
+packages installed: 
+[raster](https://CRAN.R-project.org/package=raster), 
+[sf](https://CRAN.R-project.org/package=sf), 
+[jsonlite](https://CRAN.R-project.org/package=jsonlite),
+[readxl](https://CRAN.R-project.org/package=readxl).
 
-```{r cars}
-summary(cars)
+## Working with the JSON API
+
+The JSON API uses JSON as data exchange format.
+Let's define the url for the BAM v4 API:
+
+```{r}
+library(jsonlite)
+api_root <- "https://borealbirds.github.io/api/v4"
 ```
 
-## Including Plots
+### Get the list of species
 
-You can also embed plots, for example:
+First, we need to get the list of species from the JSON API,
+so that we know what species codes to use:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+library(jsonlite)
+api_root <- "https://borealbirds.github.io/api/v4"
+tab <- fromJSON(file.path(api_root, "species"))
+str(tab)
+head(tab[,c("id", "english")])
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+### Get estimates for a species
+
+We can use the `id` column if we need to loop over multiple species.
+Now we'll only use one species, Canada Warbler (`"CAWA"`):
+
+```{r}
+spp <- "CAWA"
+results <- fromJSON(file.path(api_root, "species", spp))
+str(results, max.level=2)
+```
+
+The `species` element in the list contain the species info
+saw already in the species `tab`le.
+
+The `popsize` element contains population sizes, densities, and areas
+for the various regions:
+
+```{r}
+do.call(cbind, results$popsize)
+```
+
+The `densplot` element contains the regional landcover specific densities:
+
+```{r}
+## pick a region
+results$densplot$region
+region <- 1
+results$densplot$region[region]
+
+## densities for this region
+as.data.frame(lapply(results$densplot$data, "[[", 1))
+```
+
+These results reflect population  and density
+as males only (million males, males/ha, respectively).
+To apply a pair adjustment, the numbers have to be multiplied by 2.
+
+### Density map images
+
+The density map images can be accessed as
+`https://borealbirds.github.io/api/v4/species/CAWA/images/mean-pred.png`
+and 
+`https://borealbirds.github.io/api/v4/species/CAWA/images/mean-det.png`.
+
+![](https://borealbirds.github.io/api/v4/species/CAWA/images/mean-pred.png)
+
+![](https://borealbirds.github.io/api/v4/species/CAWA/images/mean-det.png)
+
+## Assessing results
+
+Accessing the `BAMv4-results-2020-02-20.xlsx` file gives us the following
+tables (sheet names in parenthesis):
+
+- metadata explaining sheets and columns (metadata)
+- list species of species (species)
+- list of variables (variables)
+- variable importance (importance)
+- model validation results (validation)
+- population estimates (abundances)
+- lend cover based density estimates (densities)
+
+Download the Excel file in a temporary file:
+
+```{r}
+library(readxl)
+tmp <- tempfile()
+download.file(file.path(api_root, "BAMv4-results-2020-02-20.xlsx"), tmp)
+```
+
+Now we can read in different sheets:
+
+```{r}
+vars <- read_xlsx(tmp, sheet="variables")
+str(vars)
+```
+
+Let's read in all the tables and delete the temp file:
+
+```{r}
+sheets <- c(
+    "metadata",
+    "species",
+    "variables",
+    "importance",
+    "validation",
+    "abundances",
+    "densities")
+tabs <- list()
+for (sheet in sheets)
+    tabs[[sheet]] <- read_xlsx(tmp, sheet)
+unlink(tmp)
+```
+
+```{r}
+hist(rnorm(1000))
+```
+
