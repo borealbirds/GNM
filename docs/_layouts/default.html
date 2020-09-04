@@ -28,7 +28,7 @@
 />
 <meta
   property="og:image"
-  content="{% if page.image %}{{ page.image }}{% else %}https://unsplash.com/collections/9507373/birds{% endif %}"
+  content="{% if page.image %}{{ page.image }}{% else %}{{ site.baseurl }}/card-image.png{% endif %}"
 />
 <meta property="og:type" content="website" />
 <meta property="og:image:width" content="400" />
@@ -121,7 +121,7 @@
   <footer class="footer">
     <div class="content has-text-centered">
       <p>
-          &copy; 2020 {{ site.author }} under a <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0 license</a>, source code is licensed
+          &copy; 2020 <a href="https://borealbirds.ualberta.ca/">Boreal Avian Modelling Project</a> under a <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0 license</a>, source code is licensed
         <a href="https://opensource.org/licenses/GPL-2.0">GPL-2</a>
       </p>
     </div>

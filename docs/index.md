@@ -10,9 +10,9 @@ This is the intro.
 
 ## Heading 2
 
-### heading 3
+### Heading 3
 
-#### heading 4
+#### Heading 4
 
 Txt that is **bold** or *italics*, maybe even `code`.
 
