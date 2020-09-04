@@ -1,5 +1,6 @@
 ---
-title: Generalized National Model (GNM) docs
+title: Generalized National Models
+subtitle: Documentation
 ---
 
 Reliable information on species' population sizes, trends, habitat associations, and distributions is important for conservation and land-use planning, as well as status assessment and recovery planning for species at risk. However, the development of such estimates at a national scale is challenged by a variety of factors, including sparse data coverage in remote regions ([Stralberg et al. 2015](http://dx.doi.org/10.1890/13-2289.1)), differential habitat selection across large geographies ([Crosby et al. 2019](https://doi.org/10.1111/ddi.12991)), and variation in survey protocols ([Sólymos et al. 2013](https://doi.org/10.1111/2041-210X.12106)).
