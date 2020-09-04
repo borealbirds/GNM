@@ -855,4 +855,22 @@ for (i in 1:length(fl)) {
 openxlsx::write.xlsx(ll, file = "~/repos/api/docs/v4/BAMv4-results-2020-02-20.xlsx")
 
 
+library(readxl)
+IM <- read_xlsx("~/repos/api/docs/v4/BAMv4-results-2020-02-20x.xlsx", "importance")
+V <- read_xlsx("~/repos/api/docs/v4/BAMv4-results-2020-02-20x.xlsx", "variables")
+IM <- as.data.frame(IM[IM$region=="Canada",])
+str(IM)
+
+m <- as.matrix(mefa4::Xtab(importance ~ variable + id, IM))
+m0 <- as.matrix(mefa4::Xtab( ~ variable + id, IM))
+mm <- m/m0
+mm[is.na(mm)] <- 0
+z <- ifelse(mm >= 0.05, 1, 0)
+zs <- rowSums(z)/ncol(z)
+
+data.frame(v=round(sort(zs[zs>0]), 4))
+names(zs)[zs>0.05]
+V <- as.data.frame(V)
+rownames(V) <- V$variable
+V[names(zs)[zs>0.05],2:3]
 
