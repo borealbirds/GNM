@@ -42,8 +42,6 @@ First, we need to get the list of species from the JSON API,
 so that we know what species codes to use:
 
 ```{r}
-library(jsonlite)
-api_root <- "https://borealbirds.github.io/api/v4"
 tab <- fromJSON(file.path(api_root, "species"))
 str(tab)
 head(tab[,c("id", "english")])
@@ -187,4 +185,145 @@ v[order(v$prevalence, decreasing=TRUE), c(4,5,8:12)]
 ```
 
 AUC was used to assess classification accuracy and pseudo R<sup>2</sup> to quantify the proportion of variance explained. OCCC measures correspondence across bootstrap based predictions. OCCC is the product of two the overall precision (how far each observation deviated from the best fit line), and the overall accuracy (how far the best line deviates from the 1:1 line).
+
+## Working with maps
+
+The 1 km<sup>2</sum> resolution GeoTIFF raster files are in
+[this](https://drive.google.com/drive/folders/1exWa6vfhGo1DNUL4ei2baDz77as7jYzY?usp=sharing)
+shared Google Drive folder, anyone can view.
+
+We can access the list of available files and download the files
+using the googledrive package:
+
+```{r eval=FALSE}
+library(googledrive)
+
+## this should let you authenticate
+drive_find(n_max = 30)
+
+## now list files in the shared folder
+f <- "https://drive.google.com/drive/folders/1exWa6vfhGo1DNUL4ei2baDz77as7jYzY?usp=sharing"
+l <- drive_ls(as_id(f), recursive=TRUE)
+
+## add species codes
+l$species_id <- sapply(strsplit(l$name, "-"), "[[", 2)
+
+## download
+tmp <- tempfile(fileext = ".tif")
+file_id <- l$id[l$species_id == spp]
+tif_file <- drive_download(file_id, tmp)
+
+tif_file <- drive_download(file_id, 
+    path="~/Downloads/pred-CAWA-CAN-Mean.tif",
+    overwrite=TRUE)
+
+tif_path <- tif_file$local_path
+```
+
+Alternative: download the file for a spacies and point to its path:
+
+```{r}
+tif_path <- "~/Downloads/pred-CAWA-CAN-Mean.tif"
+```
+
+Now we can work with the raster:
+
+```{r}
+library(raster)
+r <- raster(tif_path)
+
+plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100))
+```
+
+```{r}
+library(sf)
+
+bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/OSA_bound.geojson")
+#bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/AB_bound.geojson")
+
+bound <- st_transform(bound, st_crs(r))
+
+plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100))
+plot(bound$geometry, add=TRUE, border="red", col=NA)
+```
+
+
+```{r}
+r2 <- crop(r, bound)
+r2 <- mask(r2, bound)
+plot(r2, axes=FALSE, box=FALSE, col=hcl.colors(100))
+```
+
+Pop size (million inds) with pair adjustment:
+
+```{r}
+(N <- sum(values(r2), na.rm=TRUE) * 100 * 2) / 10^6
+```
+
+```{r}
+lc <- raster("https://raw.githubusercontent.com/ABbiodiversity/recurring/master/offset/data/lcc.tif")
+
+lc <- mask(crop(lc, bound), bound)
+
+LC <- data.frame(
+  lc=values(lc),
+  density=values(r2),
+  area=1)
+LC <- LC[!is.na(LC$density),]
+
+labs <- c(
+    "Conifer"=1,
+    "Taiga Conifer"=2,
+    "Deciduous"=5,
+    "Mixedwood"=6,
+    "Shrub"=8,
+    "Grass"=10,
+    "Arctic Shrub"=11,
+    "Arctic Grass"=12,
+    "Wetland"=14,
+    "Cropland"=15)
+LC$label <- names(labs)[match(LC$lc, labs)]
+
+head(LC)
+
+(PS <- aggregate(list(density=LC$density), list(landcover=LC$label), mean))
+```
+
+```{r results='hide'}
+ggplot(PS, aes(x=landcover, y=density)) +
+    geom_bar(stat="identity", fill="#95B6C1") +
+    coord_flip() +
+    ylab("Density (males/ha)") +
+    xlab("Landcover") +
+    labs(title="Canada Warbler in Alberta", 
+         caption="Based on post-stratification") +
+    theme_minimal()
+```
+
+Under climate‐driven change scenarios, dramatic changes in vegetation types were projected for the next century (Appendix S3: Figs. S2, S3), with a nearly 250,000‐km2 increase in grassland area projected by the end of the century for all GCMs (Fig. 5). Climatic potential for upland conifer, mixedwood forest, and deciduous woodland was projected to decrease by ~62,000 km2 (94%), ~156,000 km2 (98%), and ~21,000 km2 (96%) on average, respectively, by the end of the century (Fig. 5). 
+
+https://esajournals.onlinelibrary.wiley.com/cms/asset/cd7502a6-fa2e-43bd-b9a1-fdaf5304cd48/ecs22156-fig-0005-m.jpg
+
+```{r}
+area <- aggregate(list(area=LC$area), list(landcover=LC$label), sum)
+area$area100 <- area$area
+area$area100[area$landcover == "Grass"] <-
+  area$area100[area$landcover == "Grass"] + 50000
+area$area100[area$landcover == "Deciduous"] <-
+  area$area100[area$landcover == "Deciduous"] + 5000
+area$area100[area$landcover == "Mixedwood"] <-
+  area$area100[area$landcover == "Mixedwood"] - 35000
+area$area100[area$landcover == "Conifer"] <-
+  area$area100[area$landcover == "Conifer"] - 20000
+
+pop <- data.frame(
+  landcover=PS$landcover,
+  N=PS$density * area$area * 100 * 2,
+  N100=PS$density * area$area100 * 100 * 2)
+
+Ntot <- sum(pop$N)
+Ntot100 <- sum(pop$N100)
+
+100 * ((Ntot100 - Ntot)/100) / Ntot
+```
 
