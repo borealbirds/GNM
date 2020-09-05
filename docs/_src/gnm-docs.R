@@ -1,5 +1,6 @@
 library(rmarkdown)
 library(knitr)
+library(magick)
 
 ## read in files
 f <- list(
@@ -43,13 +44,16 @@ md <- gsub("{{ site.baseurl }}", "https://borealbirds.github.io/GNM", md, fixed=
 ## making images local for latex
 j <- which(startsWith(md, "!["))
 jj <- gsub(")", "", sapply(strsplit(md[j], "](", fixed=TRUE), "[[", 2), fixed=TRUE)
-jjj <- basename(jj) # paste0("docs/_src/", basename(jj))
-jjjj <- paste0("![](", jjj, ")")
+jjj <- paste0("docs/_src/", basename(jj))
+jjjj <- paste0("![](", gsub(".svg", ".png", basename(jj), fixed=TRUE), ")")
 for (i in 1:length(j)) {
     download.file(jj[i], jjj[i])
 }
+## convert svg to png
+im <- image_read("docs/_src/dbylc-can.svg")
+im <- image_convert(im, "png")
+image_write(im, "docs/_src/dbylc-can.png")
 md[j] <- jjjj
-
 
 writeLines(md, "docs/_src/gnm-docs.Rmd")
 
