@@ -23,7 +23,8 @@ packages installed:
 [raster](https://CRAN.R-project.org/package=raster), 
 [sf](https://CRAN.R-project.org/package=sf), 
 [jsonlite](https://CRAN.R-project.org/package=jsonlite),
-[readxl](https://CRAN.R-project.org/package=readxl).
+[readxl](https://CRAN.R-project.org/package=readxl),
+[ggplot2](https://CRAN.R-project.org/package=ggplot2).
 
 ## Working with the JSON API
 
@@ -66,8 +67,21 @@ The `popsize` element contains population sizes, densities, and areas
 for the various regions:
 
 ```{r}
-do.call(cbind, results$popsize)
+(N <- do.call(cbind, results$popsize))
 ```
+
+```{r results='hide'}
+library(ggplot2)
+ggplot(N[-1,], aes(x=region, y=abundance.estimate)) +
+    geom_bar(stat="identity", fill="#95B6C1") +
+    coord_flip() +
+    geom_errorbar(aes(ymin=abundance.lower, ymax=abundance.upper), 
+                  width=0.2, color="#105A73") +
+    ylab("Abundance (M males)") +
+    xlab("BCR") +
+    theme_minimal()
+```
+
 
 The `densplot` element contains the regional landcover specific densities:
 
@@ -78,7 +92,18 @@ region <- 1
 results$densplot$region[region]
 
 ## densities for this region
-as.data.frame(lapply(results$densplot$data, "[[", 1))
+(D <- as.data.frame(lapply(results$densplot$data, "[[", 1)))
+```
+
+```{r results='hide'}
+ggplot(D, aes(x=landcover, y=estimate)) +
+    geom_bar(stat="identity", fill="#95B6C1") +
+    coord_flip() +
+    geom_errorbar(aes(ymin=lower, ymax=upper), 
+                  width=0.2, color="#105A73") +
+    ylab("Density (males/ha)") +
+    xlab("Landcover") +
+    theme_minimal()
 ```
 
 These results reflect population  and density
@@ -141,7 +166,25 @@ for (sheet in sheets)
 unlink(tmp)
 ```
 
-```{r}
-hist(rnorm(1000))
+Here are variable importance results:
+
+
+```{r fig.width=8,fig.height=8}
+i <- tabs$importance
+i <- i[i$id == spp & i$region != "Canada",]
+i$BCR <- sapply(strsplit(i$region, " "), "[[", 1)
+ii <- stats::xtabs(importance ~ variable + BCR, i)
+heatmap(ii, margins = c(5, 10), col=hcl.colors(100, "Teal", rev=TRUE))
 ```
+
+
+These are validation results for the Canada Warbler:
+
+```{r}
+v <- tabs$validation
+v <- v[v$id == spp,]
+v[order(v$prevalence, decreasing=TRUE), c(4,5,8:12)]
+```
+
+AUC was used to assess classification accuracy and pseudo R<sup>2</sup> to quantify the proportion of variance explained. OCCC measures correspondence across bootstrap based predictions. OCCC is the product of two the overall precision (how far each observation deviated from the best fit line), and the overall accuracy (how far the best line deviates from the 1:1 line).
 

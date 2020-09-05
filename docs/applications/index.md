@@ -16,7 +16,8 @@ We will assume that you use R version &gt;= 3.6 with the following
 packages installed: [raster](https://CRAN.R-project.org/package=raster),
 [sf](https://CRAN.R-project.org/package=sf),
 [jsonlite](https://CRAN.R-project.org/package=jsonlite),
-[readxl](https://CRAN.R-project.org/package=readxl).
+[readxl](https://CRAN.R-project.org/package=readxl),
+[ggplot2](https://CRAN.R-project.org/package=ggplot2).
 
 Working with the JSON API
 -------------------------
@@ -91,7 +92,7 @@ in the species `tab`le.
 The `popsize` element contains population sizes, densities, and areas
 for the various regions:
 
-    do.call(cbind, results$popsize)
+    (N <- do.call(cbind, results$popsize))
 
     ##                                     region abundance.estimate abundance.lower
     ## 1                                   Canada             4.8100          4.5900
@@ -120,6 +121,22 @@ for the various regions:
     ## 11          0.1030           0.0097        0.0090        0.0101   0.1020
     ## 12          0.4320           0.0199        0.0180        0.0222   0.1950
 
+    library(ggplot2)
+
+    ## Warning: replacing previous import 'vctrs::data_frame' by 'tibble::data_frame'
+    ## when loading 'dplyr'
+
+    ggplot(N[-1,], aes(x=region, y=abundance.estimate)) +
+        geom_bar(stat="identity", fill="#95B6C1") +
+        coord_flip() +
+        geom_errorbar(aes(ymin=abundance.lower, ymax=abundance.upper), 
+                      width=0.2, color="#105A73") +
+        ylab("Abundance (M males)") +
+        xlab("BCR") +
+        theme_minimal()
+
+![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-5-1.png)
+
 The `densplot` element contains the regional landcover specific
 densities:
 
@@ -135,7 +152,7 @@ densities:
     ## [1] "Canada"
 
     ## densities for this region
-    as.data.frame(lapply(results$densplot$data, "[[", 1))
+    (D <- as.data.frame(lapply(results$densplot$data, "[[", 1)))
 
     ##        landcover estimate  lower  upper
     ## 1        Conifer   0.0066 0.0062 0.0073
@@ -148,6 +165,17 @@ densities:
     ## 8   Arctic Grass   0.0020 0.0014 0.0026
     ## 9        Wetland   0.0059 0.0051 0.0068
     ## 10      Cropland   0.0052 0.0044 0.0056
+
+    ggplot(D, aes(x=landcover, y=estimate)) +
+        geom_bar(stat="identity", fill="#95B6C1") +
+        coord_flip() +
+        geom_errorbar(aes(ymin=lower, ymax=upper), 
+                      width=0.2, color="#105A73") +
+        ylab("Density (males/ha)") +
+        xlab("Landcover") +
+        theme_minimal()
+
+![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-7-1.png)
 
 These results reflect population and density as males only (million
 males, males/ha, respectively). To apply a pair adjustment, the numbers
@@ -210,6 +238,43 @@ Let’s read in all the tables and delete the temp file:
         tabs[[sheet]] <- read_xlsx(tmp, sheet)
     unlink(tmp)
 
-    hist(rnorm(1000))
+Here are variable importance results:
 
-![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-9-1.png)
+    i <- tabs$importance
+    i <- i[i$id == spp & i$region != "Canada",]
+    i$BCR <- sapply(strsplit(i$region, " "), "[[", 1)
+    ii <- stats::xtabs(importance ~ variable + BCR, i)
+    heatmap(ii, margins = c(5, 10), col=hcl.colors(100, "Teal", rev=TRUE))
+
+![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-11-1.png)
+
+These are validation results for the Canada Warbler:
+
+    v <- tabs$validation
+    v <- v[v$id == spp,]
+    v[order(v$prevalence, decreasing=TRUE), c(4,5,8:12)]
+
+    ## # A tibble: 14 x 7
+    ##    region                    prevalence AUC_final pseudo_R2   occc  oprec  oaccu
+    ##    <chr>                          <dbl>     <dbl>     <dbl>  <dbl>  <dbl>  <dbl>
+    ##  1 6-1 Boreal Taiga Plains,…   0.0215      0.934     0.265  0.596  0.664  0.898 
+    ##  2 12 Boreal Hardwood Trans…   0.0214      0.807     0.0923 0.924  0.934  0.990 
+    ##  3 8-1 Boreal Softwood Shie…   0.0204      0.770     0.0530 0.632  0.694  0.910 
+    ##  4 14 Atlantic Northern For…   0.0163      0.741     0.0640 0.826  0.862  0.958 
+    ##  5 13 Lower Great Lakes/St.…   0.0137      0.839     0.138  0.915  0.925  0.989 
+    ##  6 8-2 Boreal Softwood Shie…   0.0136      0.823     0.0879 0.598  0.666  0.897 
+    ##  7 4 Northwestern Interior …   0.0132      0.936     0.253  0.638  0.718  0.890 
+    ##  8 6-0 Boreal Taiga Plains,…   0.0122      0.857     0.165  0.861  0.890  0.967 
+    ##  9 Canada                      0.0120      0.852     0.136  0.579  0.709  0.779 
+    ## 10 8-0 Boreal Softwood Shie…   0.0104      0.835     0.241  0.152  0.340  0.448 
+    ## 11 7-1 Taiga Shield & Hudso…   0.00505     0.997    -0.0723 0.0289 0.0877 0.330 
+    ## 12 11 Prairie Potholes         0.00418     0.872     0.250  0.767  0.801  0.958 
+    ## 13 10 Northern Rockies         0.00180     0.982     0.276  0.515  0.635  0.810 
+    ## 14 7-0 Taiga Shield & Hudso…   0.000426    0.0703    0      0.0754 1      0.0754
+
+AUC was used to assess classification accuracy and pseudo R<sup>2</sup>
+to quantify the proportion of variance explained. OCCC measures
+correspondence across bootstrap based predictions. OCCC is the product
+of two the overall precision (how far each observation deviated from the
+best fit line), and the overall accuracy (how far the best line deviates
+from the 1:1 line).
