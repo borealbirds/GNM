@@ -17,7 +17,8 @@ packages installed: [raster](https://CRAN.R-project.org/package=raster),
 [sf](https://CRAN.R-project.org/package=sf),
 [jsonlite](https://CRAN.R-project.org/package=jsonlite),
 [readxl](https://CRAN.R-project.org/package=readxl),
-[ggplot2](https://CRAN.R-project.org/package=ggplot2).
+[ggplot2](https://CRAN.R-project.org/package=ggplot2), and optionally
+[googledrive](https://CRAN.R-project.org/package=googledrive).
 
 Working with the JSON API
 -------------------------
@@ -59,10 +60,14 @@ know what species codes to use:
 ### Get estimates for a species
 
 We can use the `id` column if we need to loop over multiple species. Now
-we’ll only use one species, Canada Warbler (`"CAWA"`):
+we’ll only use one species:
 
     spp <- "CAWA"
     results <- fromJSON(file.path(api_root, "species", spp))
+    results$species$english
+
+    ## [1] "Canada Warbler"
+
     str(results, max.level=2)
 
     ## List of 3
@@ -190,8 +195,8 @@ and
 
 ![](https://borealbirds.github.io/api/v4/species/CAWA/images/mean-det.png)
 
-Assessing results
------------------
+Assessing validation results
+----------------------------
 
 Accessing the `BAMv4-results-2020-02-20.xlsx` file gives us the
 following tables (sheet names in parenthesis):
@@ -310,7 +315,7 @@ the googledrive package:
 
     tif_path <- tif_file$local_path
 
-Alternative: download the file for a spacies and point to its path:
+Alternatively, download the file for a species and point to its path:
 
     tif_path <- "~/Downloads/pred-CAWA-CAN-Mean.tif"
 
@@ -322,55 +327,80 @@ Now we can work with the raster:
 
     r <- raster(tif_path)
 
-    plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100))
+    plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 
 ![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-15-1.png)
+
+### Population size for custom boundary
+
+Next, we read in a custom boundary file. Let’s use the provincial
+boundary of ALberta now (stored as a GeoJSON file). We transform the
+polygon to match the projection of our raster layer and plot the two
+together:
 
     library(sf)
 
     ## Linking to GEOS 3.7.2, GDAL 2.4.2, PROJ 5.2.0
 
-    bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/OSA_bound.geojson")
+    #bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/OSA_bound.geojson")
+    bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/AB_bound.geojson")
 
-    ## Reading layer `OSA' from data source `https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/OSA_bound.geojson' using driver `GeoJSON'
+    ## Reading layer `Alberta' from data source `https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/AB_bound.geojson' using driver `GeoJSON'
     ## Simple feature collection with 1 feature and 1 field
     ## geometry type:  POLYGON
     ## dimension:      XY
-    ## bbox:           xmin: -117.9161 ymin: 53.54062 xmax: -110.0056 ymax: 59.99964
+    ## bbox:           xmin: -120.0016 ymin: 48.99666 xmax: -110.0048 ymax: 60.00046
     ## epsg (SRID):    4326
     ## proj4string:    +proj=longlat +datum=WGS84 +no_defs
 
-    #bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/AB_bound.geojson")
-
     bound <- st_transform(bound, st_crs(r))
 
-    plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100))
+    plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
     plot(bound$geometry, add=TRUE, border="red", col=NA)
 
 ![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-16-1.png)
 
+Let’s crop the density map to the extent of Alberta and mask areas
+outside of the boundary:
+
     r2 <- crop(r, bound)
     r2 <- mask(r2, bound)
-    plot(r2, axes=FALSE, box=FALSE, col=hcl.colors(100))
+    plot(r2, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 
 ![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-17-1.png)
 
-Pop size (million inds) with pair adjustment:
+We can now sum up the raster cells to get population size (million inds)
+with pair adjustment:
 
     (N <- sum(values(r2), na.rm=TRUE) * 100 * 2) / 10^6
 
-    ## [1] 0.3085449
+    ## [1] 1.082979
 
+### Post-stratified density estimates
+
+Post-hoc stratification (‘post-stratification’) is an approach to
+estimate land cover based density estimates (males per ha) for a species
+based on the density map and a classification layer.
+
+Let’s use the 2005 MODIS-based North American landcover map as an
+example within the Alberta boundary. We calculate the mean of the pixel
+level predicted densities (`PS`).
+
+    ## read in raster
     lc <- raster("https://raw.githubusercontent.com/ABbiodiversity/recurring/master/offset/data/lcc.tif")
 
+    ## crop and mask to boundary
     lc <- mask(crop(lc, bound), bound)
 
+    ## extract cell values
     LC <- data.frame(
-      lc=values(lc),
-      density=values(r2),
-      area=1)
+        lc=values(lc),      # land cover classes, integer
+        density=values(r2), # males / ha
+        area=1)             # km^2
+    ## remove NA values (cells outside of boundary but inside bounding box)
     LC <- LC[!is.na(LC$density),]
 
+    ## land cover classes
     labs <- c(
         "Conifer"=1,
         "Taiga Conifer"=2,
@@ -386,67 +416,40 @@ Pop size (million inds) with pair adjustment:
 
     head(LC)
 
-    ##      lc     density area         label
-    ## 447   2 0.006331233    1 Taiga Conifer
-    ## 448   2 0.006512964    1 Taiga Conifer
-    ## 449   6 0.006452276    1     Mixedwood
-    ## 450   2 0.006259520    1 Taiga Conifer
-    ## 1019  2 0.006105448    1 Taiga Conifer
-    ## 1020  2 0.006240427    1 Taiga Conifer
+    ##      lc     density area     label
+    ## 1045  6 0.006929385    1 Mixedwood
+    ## 1046  6 0.006855813    1 Mixedwood
+    ## 1047  6 0.006849375    1 Mixedwood
+    ## 1825  6 0.007014129    1 Mixedwood
+    ## 1826  6 0.006815174    1 Mixedwood
+    ## 1827  1 0.006703767    1   Conifer
 
+    ## aggregate density by land cover
     (PS <- aggregate(list(density=LC$density), list(landcover=LC$label), mean))
 
     ##       landcover     density
-    ## 1  Arctic Grass 0.007682844
-    ## 2       Conifer 0.008022638
-    ## 3      Cropland 0.007281190
-    ## 4     Deciduous 0.017069181
-    ## 5         Grass 0.008076530
-    ## 6     Mixedwood 0.012397709
-    ## 7         Shrub 0.007223468
-    ## 8 Taiga Conifer 0.006872267
-    ## 9       Wetland 0.007924573
+    ## 1  Arctic Grass 0.003469213
+    ## 2       Conifer 0.006983323
+    ## 3      Cropland 0.004930945
+    ## 4     Deciduous 0.019037611
+    ## 5         Grass 0.004553917
+    ## 6     Mixedwood 0.013687571
+    ## 7         Shrub 0.006586476
+    ## 8 Taiga Conifer 0.007123922
+    ## 9       Wetland 0.008748280
+
+Here are the post stratified density values:
 
     ggplot(PS, aes(x=landcover, y=density)) +
         geom_bar(stat="identity", fill="#95B6C1") +
         coord_flip() +
         ylab("Density (males/ha)") +
         xlab("Landcover") +
-        labs(title="Canada Warbler in Alberta", 
+        labs(title=paste(results$species$english, "in Alberta"), 
              caption="Based on post-stratification") +
         theme_minimal()
 
 ![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-20-1.png)
 
-Under climate‐driven change scenarios, dramatic changes in vegetation
-types were projected for the next century (Appendix S3: Figs. S2, S3),
-with a nearly 250,000‐km2 increase in grassland area projected by the
-end of the century for all GCMs (Fig. 5). Climatic potential for upland
-conifer, mixedwood forest, and deciduous woodland was projected to
-decrease by ~62,000 km2 (94%), ~156,000 km2 (98%), and ~21,000 km2 (96%)
-on average, respectively, by the end of the century (Fig. 5).
-
-<a href="https://esajournals.onlinelibrary.wiley.com/cms/asset/cd7502a6-fa2e-43bd-b9a1-fdaf5304cd48/ecs22156-fig-0005-m.jpg" class="uri">https://esajournals.onlinelibrary.wiley.com/cms/asset/cd7502a6-fa2e-43bd-b9a1-fdaf5304cd48/ecs22156-fig-0005-m.jpg</a>
-
-    area <- aggregate(list(area=LC$area), list(landcover=LC$label), sum)
-    area$area100 <- area$area
-    area$area100[area$landcover == "Grass"] <-
-      area$area100[area$landcover == "Grass"] + 50000
-    area$area100[area$landcover == "Deciduous"] <-
-      area$area100[area$landcover == "Deciduous"] + 5000
-    area$area100[area$landcover == "Mixedwood"] <-
-      area$area100[area$landcover == "Mixedwood"] - 35000
-    area$area100[area$landcover == "Conifer"] <-
-      area$area100[area$landcover == "Conifer"] - 20000
-
-    pop <- data.frame(
-      landcover=PS$landcover,
-      N=PS$density * area$area * 100 * 2,
-      N100=PS$density * area$area100 * 100 * 2)
-
-    Ntot <- sum(pop$N)
-    Ntot100 <- sum(pop$N100)
-
-    100 * ((Ntot100 - Ntot)/100) / Ntot
-
-    ## [1] -0.06835081
+These results can be used in region specific analyses that require
+density values as inputs, for example landcover based scenario analyses.

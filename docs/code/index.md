@@ -8,7 +8,7 @@ title: Code
 
 The code in the `/R` folder of the repository includes R scripts for
 processing the data (observations, offsets, and predictors)
-and mosaicing together the predictive maps pieces.
+and mosaicing together the regional predictive map pieces.
 
 The code in the `/graham` folder contains
 code to run on [Compute Canada](https://www.computecanada.ca/)'s
@@ -25,7 +25,12 @@ hosted as part of the API repository.
 
 Assets are served from the `/docs` folder of the git master branch via [GitHub pages](https://pages.github.com/).
 
-The species mean density raster layers are available in GeoTIFF format from [here](https://drive.google.com/drive/folders/1exWa6vfhGo1DNUL4ei2baDz77as7jYzY?usp=sharing).
+Benefits of hosting these results via GitHub pages include security (serving assets over https, protection against certain cyber attachs)
+and speed (via the use of content delivery network).
+The data can be consumed by other computers because GitHub pages responses
+have cross-origin resource sharing headers.
+
+The species mean density raster layers are available in GeoTIFF format from [this Google Drive folder](https://drive.google.com/drive/folders/1exWa6vfhGo1DNUL4ei2baDz77as7jYzY?usp=sharing).
 
 ## Presenting the results
 
@@ -63,7 +68,7 @@ gridsome develop
 ## now look at http://localhost:8080
 ```
 
-To locally build and deploy, use the `_build.sh` script (you will need write access to the GitHub repo).
+To locally build and deploy, use the `_build.sh` script (you will need write access to the GitHub repository).
 
 Automatic build & deployment enabled via [GitHub Actions](https://github.com/borealbirds/borealbirds.github.io/actions),
-see setup in `.github/workflows/build.yml` file.
+see setup in the `.github/workflows/build.yml` file.

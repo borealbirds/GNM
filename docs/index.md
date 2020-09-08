@@ -9,12 +9,17 @@ With these factors in mind, we developed a generalized analytical approach to mo
 
 ## Contact
 
+Please contact us if you have questions or suggestions via these channels:
+
 * [borealbirds.ualberta.ca](https://borealbirds.ualberta.ca/)
 * [Twitter](https://twitter.com/borealbirds)
 * [GitHub](https://github.com/borealbirds)
 
 ## Citing the models
 
+Please cite this document when using the BAM Nationam Model results as:
+
 Boreal Avian Modelling Project, 2020.
 *National density models v4.0*. Available at 
 [https://borealbirds.github.io/](https://borealbirds.github.io/).
+

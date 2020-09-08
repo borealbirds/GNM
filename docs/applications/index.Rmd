@@ -24,7 +24,8 @@ packages installed:
 [sf](https://CRAN.R-project.org/package=sf), 
 [jsonlite](https://CRAN.R-project.org/package=jsonlite),
 [readxl](https://CRAN.R-project.org/package=readxl),
-[ggplot2](https://CRAN.R-project.org/package=ggplot2).
+[ggplot2](https://CRAN.R-project.org/package=ggplot2),
+and optionally [googledrive](https://CRAN.R-project.org/package=googledrive).
 
 ## Working with the JSON API
 
@@ -50,11 +51,12 @@ head(tab[,c("id", "english")])
 ### Get estimates for a species
 
 We can use the `id` column if we need to loop over multiple species.
-Now we'll only use one species, Canada Warbler (`"CAWA"`):
+Now we'll only use one species:
 
 ```{r}
 spp <- "CAWA"
 results <- fromJSON(file.path(api_root, "species", spp))
+results$species$english
 str(results, max.level=2)
 ```
 
@@ -119,7 +121,7 @@ and
 
 ![](https://borealbirds.github.io/api/v4/species/CAWA/images/mean-det.png)
 
-## Assessing results
+## Assessing validation results
 
 Accessing the `BAMv4-results-2020-02-20.xlsx` file gives us the following
 tables (sheet names in parenthesis):
@@ -166,7 +168,6 @@ unlink(tmp)
 
 Here are variable importance results:
 
-
 ```{r fig.width=8,fig.height=8}
 i <- tabs$importance
 i <- i[i$id == spp & i$region != "Canada",]
@@ -175,8 +176,7 @@ ii <- stats::xtabs(importance ~ variable + BCR, i)
 heatmap(ii, margins = c(5, 10), col=hcl.colors(100, "Teal", rev=TRUE))
 ```
 
-
-These are validation results for the Canada Warbler:
+These are validation results for the `r results$species$english`:
 
 ```{r}
 v <- tabs$validation
@@ -220,7 +220,7 @@ tif_file <- drive_download(file_id,
 tif_path <- tif_file$local_path
 ```
 
-Alternative: download the file for a spacies and point to its path:
+Alternatively, download the file for a species and point to its path:
 
 ```{r}
 tif_path <- "~/Downloads/pred-CAWA-CAN-Mean.tif"
@@ -232,45 +232,63 @@ Now we can work with the raster:
 library(raster)
 r <- raster(tif_path)
 
-plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100))
+plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 ```
+
+### Population size for custom boundary
+
+Next, we read in a custom boundary file. Let's use the provincial boundary of ALberta now (stored as a GeoJSON file). We transform the polygon to match the projection of our raster layer and plot the two together:
 
 ```{r}
 library(sf)
 
-bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/OSA_bound.geojson")
-#bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/AB_bound.geojson")
+#bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/OSA_bound.geojson")
+bound <- st_read("https://raw.githubusercontent.com/ABbiodiversity/cure4insect/master/inst/extdata/AB_bound.geojson")
 
 bound <- st_transform(bound, st_crs(r))
 
-plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100))
+plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 plot(bound$geometry, add=TRUE, border="red", col=NA)
 ```
 
+Let's crop the density map to the extent of Alberta and mask areas outside of the boundary:
 
 ```{r}
 r2 <- crop(r, bound)
 r2 <- mask(r2, bound)
-plot(r2, axes=FALSE, box=FALSE, col=hcl.colors(100))
+plot(r2, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 ```
 
-Pop size (million inds) with pair adjustment:
+We can now sum up the raster cells to get population size (million inds) with pair adjustment:
 
 ```{r}
 (N <- sum(values(r2), na.rm=TRUE) * 100 * 2) / 10^6
 ```
 
+### Post-stratified density estimates
+
+Post-hoc stratification ('post-stratification') is an approach to estimate land cover based density estimates (males per ha) for a species based on the density map and a classification layer. 
+
+Let's use the 2005 MODIS-based North American landcover map as an example within the Alberta boundary.
+We calculate the mean of the pixel level predicted densities (`PS`). 
+
+
 ```{r}
+## read in raster
 lc <- raster("https://raw.githubusercontent.com/ABbiodiversity/recurring/master/offset/data/lcc.tif")
 
+## crop and mask to boundary
 lc <- mask(crop(lc, bound), bound)
 
+## extract cell values
 LC <- data.frame(
-  lc=values(lc),
-  density=values(r2),
-  area=1)
+    lc=values(lc),      # land cover classes, integer
+    density=values(r2), # males / ha
+    area=1)             # km^2
+## remove NA values (cells outside of boundary but inside bounding box)
 LC <- LC[!is.na(LC$density),]
 
+## land cover classes
 labs <- c(
     "Conifer"=1,
     "Taiga Conifer"=2,
@@ -286,8 +304,11 @@ LC$label <- names(labs)[match(LC$lc, labs)]
 
 head(LC)
 
+## aggregate density by land cover
 (PS <- aggregate(list(density=LC$density), list(landcover=LC$label), mean))
 ```
+
+Here are the post stratified density values:
 
 ```{r results='hide'}
 ggplot(PS, aes(x=landcover, y=density)) +
@@ -295,35 +316,10 @@ ggplot(PS, aes(x=landcover, y=density)) +
     coord_flip() +
     ylab("Density (males/ha)") +
     xlab("Landcover") +
-    labs(title="Canada Warbler in Alberta", 
+    labs(title=paste(results$species$english, "in Alberta"), 
          caption="Based on post-stratification") +
     theme_minimal()
 ```
 
-Under climate‐driven change scenarios, dramatic changes in vegetation types were projected for the next century (Appendix S3: Figs. S2, S3), with a nearly 250,000‐km2 increase in grassland area projected by the end of the century for all GCMs (Fig. 5). Climatic potential for upland conifer, mixedwood forest, and deciduous woodland was projected to decrease by ~62,000 km2 (94%), ~156,000 km2 (98%), and ~21,000 km2 (96%) on average, respectively, by the end of the century (Fig. 5). 
-
-https://esajournals.onlinelibrary.wiley.com/cms/asset/cd7502a6-fa2e-43bd-b9a1-fdaf5304cd48/ecs22156-fig-0005-m.jpg
-
-```{r}
-area <- aggregate(list(area=LC$area), list(landcover=LC$label), sum)
-area$area100 <- area$area
-area$area100[area$landcover == "Grass"] <-
-  area$area100[area$landcover == "Grass"] + 50000
-area$area100[area$landcover == "Deciduous"] <-
-  area$area100[area$landcover == "Deciduous"] + 5000
-area$area100[area$landcover == "Mixedwood"] <-
-  area$area100[area$landcover == "Mixedwood"] - 35000
-area$area100[area$landcover == "Conifer"] <-
-  area$area100[area$landcover == "Conifer"] - 20000
-
-pop <- data.frame(
-  landcover=PS$landcover,
-  N=PS$density * area$area * 100 * 2,
-  N100=PS$density * area$area100 * 100 * 2)
-
-Ntot <- sum(pop$N)
-Ntot100 <- sum(pop$N100)
-
-100 * ((Ntot100 - Ntot)/100) / Ntot
-```
-
+These results can be used in region specific analyses that require
+density values as inputs, for example landcover based scenario analyses.
