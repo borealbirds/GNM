@@ -30,7 +30,7 @@ and optionally [googledrive](https://CRAN.R-project.org/package=googledrive).
 ## Working with the JSON API
 
 The JSON API uses JSON as data exchange format.
-Let's define the url for the BAM v4 API:
+Let's define the URL for the BAM v4 API:
 
 ```{r}
 library(jsonlite)
@@ -237,7 +237,7 @@ plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 
 ### Population size for custom boundary
 
-Next, we read in a custom boundary file. Let's use the provincial boundary of ALberta now (stored as a GeoJSON file). We transform the polygon to match the projection of our raster layer and plot the two together:
+Next, we read in a custom boundary file. Let's use the provincial boundary of Alberta now (stored as a GeoJSON file). We transform the polygon to match the projection of our raster layer and plot the two together:
 
 ```{r}
 library(sf)
@@ -259,7 +259,7 @@ r2 <- mask(r2, bound)
 plot(r2, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 ```
 
-We can now sum up the raster cells to get population size (million inds) with pair adjustment:
+We can now sum up the raster cells to get population size (million individuals) with pair adjustment:
 
 ```{r}
 (N <- sum(values(r2), na.rm=TRUE) * 100 * 2) / 10^6

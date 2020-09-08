@@ -23,7 +23,7 @@ Avian data were extracted from the BAM avian dataset (v. 4) and supplemented wit
 
 We present models for 143 landbird species for which density offsets were available and for which data were sufficient to fit cross-validated BRTs in at least one of the 16 regions. Point-count surveys were conducted between 1991 and 2018 (97% of the point counts were from between 1997 and 2014). We stratified samples by year and geography to produce a more spatially and temporally balanced dataset. We used a 2.5 km x 2.5 km resolution spatial grid to define spatial ‘clusters’ of data. We resampled the data set in each region so that we had a single data point from each cluster/year combination and fit BRTs to the resampled data set. This subsampling addressed instances where multiple visits to the same location occurred within the same year. The subsampling was repeated 32 times.
 
-The list of species is part of the dowloadable [Excel file](https://borealbirds.github.io/api/v4/BAMv4-results-2020-02-20.xlsx).
+The list of species is part of the downloadable [Excel file](https://borealbirds.github.io/api/v4/BAMv4-results-2020-02-20.xlsx).
 
 ### Environmental covariates
 
@@ -35,7 +35,7 @@ To capture other sources of landscape variation not represented in vegetation da
 
 We pre-screened the environmental predictor variables to eliminate constant (no variation in a BCR subunit) or highly correlated (Pearson's correlation > 0.9) variables. We also eliminated variables that never entered the cross-validated BRTs to further narrow the variable set for bootstrap to boost computing speed.
 
-The list of covariates is part of the dowloadable [Excel file](https://borealbirds.github.io/api/v4/BAMv4-results-2020-02-20.xlsx).
+The list of covariates is part of the downloadable [Excel file](https://borealbirds.github.io/api/v4/BAMv4-results-2020-02-20.xlsx).
 
 ## Analyses
 
@@ -57,7 +57,7 @@ We calculated validation metrics using the training data set by making 32 predic
 
 We used the bootstrap averaged predictions to calculate expected values under the null model [exp(initial intercept estimate of the BRT + offsets)] and the final BRT [estimate from all trees combined x exp(offset)]. These initial and final predictions were used to calculate AUC (initial and final) to assess classification accuracy (counts treated as detection / non-detection) and pseudo R2 to quantify the proportion of variance explained (based on Poisson density based deviance relative to the null and saturated models).
 
-Validation results are part of the dowloadable [Excel file](https://borealbirds.github.io/api/v4/BAMv4-results-2020-02-20.xlsx).
+Validation results are part of the downloadable [Excel file](https://borealbirds.github.io/api/v4/BAMv4-results-2020-02-20.xlsx).
 
 ## Predictive mapping
 

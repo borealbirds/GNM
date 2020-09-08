@@ -25,7 +25,7 @@ hosted as part of the API repository.
 
 Assets are served from the `/docs` folder of the git master branch via [GitHub pages](https://pages.github.com/).
 
-Benefits of hosting these results via GitHub pages include security (serving assets over https, protection against certain cyber attachs)
+Benefits of hosting these results via GitHub pages include security (serving assets over https, protection against certain cyber attacks)
 and speed (via the use of content delivery network).
 The data can be consumed by other computers because GitHub pages responses
 have cross-origin resource sharing headers.

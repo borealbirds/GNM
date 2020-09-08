@@ -23,7 +23,7 @@ packages installed: [raster](https://CRAN.R-project.org/package=raster),
 Working with the JSON API
 -------------------------
 
-The JSON API uses JSON as data exchange format. Let’s define the url for
+The JSON API uses JSON as data exchange format. Let’s define the URL for
 the BAM v4 API:
 
     library(jsonlite)
@@ -334,7 +334,7 @@ Now we can work with the raster:
 ### Population size for custom boundary
 
 Next, we read in a custom boundary file. Let’s use the provincial
-boundary of ALberta now (stored as a GeoJSON file). We transform the
+boundary of Alberta now (stored as a GeoJSON file). We transform the
 polygon to match the projection of our raster layer and plot the two
 together:
 
@@ -369,8 +369,8 @@ outside of the boundary:
 
 ![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-17-1.png)
 
-We can now sum up the raster cells to get population size (million inds)
-with pair adjustment:
+We can now sum up the raster cells to get population size (million
+individuals) with pair adjustment:
 
     (N <- sum(values(r2), na.rm=TRUE) * 100 * 2) / 10^6
 
