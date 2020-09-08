@@ -2,6 +2,7 @@
 *.pdf
 *.doc
 *.docx
+!docs/bam-national-models-v40.pdf
 
 # Windows image file caches
 Thumbs.db

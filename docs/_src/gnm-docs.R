@@ -57,3 +57,7 @@ md[j] <- jjjj
 
 writeLines(md, "docs/_src/gnm-docs.Rmd")
 
+rmarkdown::render("docs/_src/gnm-docs.Rmd")
+file.copy("docs/_src/gnm-docs.pdf",
+          "docs/bam-national-models-v40.pdf", overwrite=TRUE)
+

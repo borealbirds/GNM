@@ -20,6 +20,6 @@ Please contact us if you have questions or suggestions via these channels:
 Please cite this document when using the BAM Nationam Model results as:
 
 Boreal Avian Modelling Project, 2020.
-*National density models v4.0*. Available at 
+*BAM Generalized National Models Documentation, Version 4.0*. Available at 
 [https://borealbirds.github.io/](https://borealbirds.github.io/).
-
+DOI: [10.5281/zenodo.4018336](https://dx.doi.org/10.5281/zenodo.4018336).

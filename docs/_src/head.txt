@@ -1,0 +1,14 @@
+---
+title: 'BAM Generalized National Models Documentation'
+author: 'Peter Solymos & Diana Stralberg'
+date: "Version 4.0 (`r format(Sys.time(), '%Y-%m-%d')`)"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+documentclass: article
+fontsize: 11pt
+classoption: letterpaper
+urlcolor: blue
+---
