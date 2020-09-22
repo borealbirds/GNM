@@ -235,6 +235,8 @@ r <- raster(tif_path)
 plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 ```
 
+Follow [this script](https://github.com/dstralberg/NationalModel/blob/master/NationalModelsPredictMosaic.R) to recreate the maps shown on the website (colors, thresholds).
+
 ### Population size for custom boundary
 
 Next, we read in a custom boundary file. Let's use the provincial boundary of Alberta now (stored as a GeoJSON file). We transform the polygon to match the projection of our raster layer and plot the two together:
@@ -250,6 +252,7 @@ bound <- st_transform(bound, st_crs(r))
 plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 plot(bound$geometry, add=TRUE, border="red", col=NA)
 ```
+
 
 Let's crop the density map to the extent of Alberta and mask areas outside of the boundary:
 

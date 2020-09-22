@@ -80,14 +80,14 @@ we’ll only use one species:
     ##   ..$ french    : chr "Paruline du Canada"
     ##   ..$ family    : chr "Parulidae"
     ##   ..$ show      : logi TRUE
-    ##  $ popsize :'data.frame':    12 obs. of  4 variables:
-    ##   ..$ region   : chr [1:12] "Canada" "4 Northwestern Interior Forest" "5 Northern Pacific Rainforest" "6 Boreal Taiga Plains" ...
-    ##   ..$ abundance:'data.frame':    12 obs. of  3 variables:
-    ##   ..$ density  :'data.frame':    12 obs. of  3 variables:
-    ##   ..$ areakmsq : num [1:12] 6.21 0.546 0.136 1.18 1.49 1.32 0.0552 0.372 0.444 0.373 ...
-    ##  $ densplot:'data.frame':    12 obs. of  2 variables:
-    ##   ..$ region: chr [1:12] "Canada" "4" "5" "6" ...
-    ##   ..$ data  :'data.frame':   12 obs. of  4 variables:
+    ##  $ popsize :'data.frame':    20 obs. of  4 variables:
+    ##   ..$ region   : chr [1:20] "Canada" "4 Northwestern Interior Forest" "5 Northern Pacific Rainforest" "6 Boreal Taiga Plains" ...
+    ##   ..$ abundance:'data.frame':    20 obs. of  3 variables:
+    ##   ..$ density  :'data.frame':    20 obs. of  3 variables:
+    ##   ..$ areakmsq : num [1:20] 6.21 0.546 0.136 1.18 1.49 1.32 0.0552 0.372 0.444 0.373 ...
+    ##  $ densplot:'data.frame':    20 obs. of  2 variables:
+    ##   ..$ region: chr [1:20] "Canada" "4" "5" "6" ...
+    ##   ..$ data  :'data.frame':   20 obs. of  4 variables:
 
 The `species` element in the list contain the species info saw already
 in the species `tab`le.
@@ -97,19 +97,27 @@ for the various regions:
 
     (N <- do.call(cbind, results$popsize))
 
-    ##                                     region abundance.estimate abundance.lower
-    ## 1                                   Canada             4.8100          4.5900
-    ## 2           4 Northwestern Interior Forest             0.3090          0.2070
-    ## 3            5 Northern Pacific Rainforest             0.0014          0.0009
-    ## 4                    6 Boreal Taiga Plains             1.0600          0.9430
-    ## 5           7 Taiga Shield & Hudson Plains             0.2060          0.1560
-    ## 6                 8 Boreal Softwood Shield             1.4600          1.3400
-    ## 7                            9 Great Basin             0.0002          0.0000
-    ## 8                      10 Northern Rockies             0.0353          0.0208
-    ## 9                      11 Prairie Potholes             0.1750          0.1440
-    ## 10           12 Boreal Hardwood Transition             1.0400          0.9920
-    ## 11 13 Lower Great Lakes/St. Lawrence Plain             0.0986          0.0919
-    ## 12             14 Atlantic Northern Forest             0.3880          0.3510
+    ##                                      region abundance.estimate abundance.lower
+    ## 1                                    Canada             4.8100          4.5900
+    ## 2            4 Northwestern Interior Forest             0.3090          0.2070
+    ## 3             5 Northern Pacific Rainforest             0.0014          0.0009
+    ## 4                     6 Boreal Taiga Plains             1.0600          0.9430
+    ## 5            7 Taiga Shield & Hudson Plains             0.2060          0.1560
+    ## 6                  8 Boreal Softwood Shield             1.4600          1.3400
+    ## 7                             9 Great Basin             0.0002          0.0000
+    ## 8                       10 Northern Rockies             0.0353          0.0208
+    ## 9                       11 Prairie Potholes             0.1750          0.1440
+    ## 10            12 Boreal Hardwood Transition             1.0400          0.9920
+    ## 11  13 Lower Great Lakes/St. Lawrence Plain             0.0986          0.0919
+    ## 12              14 Atlantic Northern Forest             0.3880          0.3510
+    ## 13           6-0 Boreal Taiga Plains, South             0.8290          0.7500
+    ## 14           6-1 Boreal Taiga Plains, North             0.2480          0.1090
+    ## 15   7-0 Taiga Shield & Hudson Plains, West             0.0539          0.0217
+    ## 16   7-1 Taiga Shield & Hudson Plains, East             0.1500          0.1050
+    ## 17         8-0 Boreal Softwood Shield, West             0.2640          0.1930
+    ## 18      8-1 Boreal Softwood Shield, Ontario             0.7170          0.6160
+    ## 19         8-2 Boreal Softwood Shield, East             0.4800          0.4340
+    ## 20 8-3 Boreal Softwood Shield, Newfoundland             0.0072          0.0001
     ##    abundance.upper density.estimate density.lower density.upper areakmsq
     ## 1           5.2100           0.0077        0.0074        0.0084   6.2100
     ## 2           0.4010           0.0057        0.0038        0.0073   0.5460
@@ -123,6 +131,14 @@ for the various regions:
     ## 10          1.1100           0.0280        0.0266        0.0297   0.3730
     ## 11          0.1030           0.0097        0.0090        0.0101   0.1020
     ## 12          0.4320           0.0199        0.0180        0.0222   0.1950
+    ## 13          0.9530           0.0110        0.0099        0.0126   0.7560
+    ## 14          0.3950           0.0058        0.0025        0.0092   0.4280
+    ## 15          0.0862           0.0010        0.0004        0.0015   0.5610
+    ## 16          0.2130           0.0016        0.0011        0.0023   0.9250
+    ## 17          0.3550           0.0076        0.0055        0.0102   0.3480
+    ## 18          0.8050           0.0182        0.0156        0.0204   0.3950
+    ## 19          0.5520           0.0102        0.0092        0.0117   0.4730
+    ## 20          0.0123           0.0008        0.0000        0.0013   0.0945
 
     library(ggplot2)
 
@@ -147,7 +163,8 @@ densities:
     results$densplot$region
 
     ##  [1] "Canada" "4"      "5"      "6"      "7"      "8"      "9"      "10"    
-    ##  [9] "11"     "12"     "13"     "14"
+    ##  [9] "11"     "12"     "13"     "14"     "6-0"    "6-1"    "7-0"    "7-1"   
+    ## [17] "8-0"    "8-1"    "8-2"    "8-3"
 
     region <- 1
     results$densplot$region[region]
@@ -330,6 +347,10 @@ Now we can work with the raster:
     plot(r, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"))
 
 ![](https://borealbirds.github.io/GNM/applications/index_files/figure-markdown_strict/unnamed-chunk-15-1.png)
+
+Follow [this
+script](https://github.com/dstralberg/NationalModel/blob/master/NationalModelsPredictMosaic.R)
+to recreate the maps shown on the website (colors, thresholds).
 
 ### Population size for custom boundary
 
