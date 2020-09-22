@@ -113,7 +113,7 @@ f <- function(y) {
     cbind(y, yx)[,SPP]
 }
 YY2 <- f(YY2)
-#' Windtrax
+#' Wildtrax
 YY3 <- e3$y
 compare_sets(colnames(YY3), SPP)
 YY3 <- f(YY3)
