@@ -22,4 +22,4 @@ Please cite this document when using the BAM National Model results as:
 Boreal Avian Modelling Project, 2020.
 *BAM Generalized National Models Documentation, Version 4.0*. Available at 
 [https://borealbirds.github.io/](https://borealbirds.github.io/).
-DOI: [10.5281/zenodo.4018336](https://dx.doi.org/10.5281/zenodo.4018336).
+DOI: [10.5281/zenodo.4018335](https://dx.doi.org/10.5281/zenodo.4018335).
