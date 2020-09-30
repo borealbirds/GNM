@@ -141,10 +141,6 @@ for the various regions:
     ## 20          0.0123           0.0008        0.0000        0.0013   0.0945
 
     library(ggplot2)
-
-    ## Warning: replacing previous import 'vctrs::data_frame' by 'tibble::data_frame'
-    ## when loading 'dplyr'
-
     ggplot(N[-1,], aes(x=region, y=abundance.estimate)) +
         geom_bar(stat="identity", fill="#95B6C1") +
         coord_flip() +
@@ -237,11 +233,11 @@ Now we can read in different sheets:
     vars <- read_xlsx(tmp, sheet="variables")
     str(vars)
 
-    ## tibble [219 × 4] (S3: tbl_df/tbl/data.frame)
-    ##  $ variable  : chr [1:219] "YEAR" "ARU" "AHM" "bFFP" ...
-    ##  $ definition: chr [1:219] "Year of survey" "ARU (1) or human point count (0)" "Annual heat:moisture" "Beginning of the frost free period" ...
-    ##  $ resolution: chr [1:219] NA NA "1 km" "1 km" ...
-    ##  $ source    : chr [1:219] NA NA "Wang T., Hamann A., Spittlehouse D., & Carroll C. (2016) Locally Downscaled and Spatially Customizable Climate "| __truncated__ "Wang T., Hamann A., Spittlehouse D., & Carroll C. (2016) Locally Downscaled and Spatially Customizable Climate "| __truncated__ ...
+    ## tibble [220 × 4] (S3: tbl_df/tbl/data.frame)
+    ##  $ variable  : chr [1:220] "YEAR" "ARU" "AHM" "bFFP" ...
+    ##  $ definition: chr [1:220] "Year of survey" "ARU (1) or human point count (0)" "Annual heat:moisture" "Beginning of the frost free period" ...
+    ##  $ resolution: chr [1:220] NA NA "1 km" "1 km" ...
+    ##  $ source    : chr [1:220] NA NA "Wang T., Hamann A., Spittlehouse D., & Carroll C. (2016) Locally Downscaled and Spatially Customizable Climate "| __truncated__ "Wang T., Hamann A., Spittlehouse D., & Carroll C. (2016) Locally Downscaled and Spatially Customizable Climate "| __truncated__ ...
 
 Let’s read in all the tables and delete the temp file:
 
