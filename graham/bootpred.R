@@ -4,7 +4,7 @@ library(gbm)
 library(raster)
 library(rgdal)
 ## variables
-PROJ <- "boot"
+PROJ <- "all"
 if (interactive()) {
     ROOT1 <- "d:/bam/BAM_data_v2019/gnm"
     ROOT2 <- "d:/bam/BAM_data_v2019/gnm"
@@ -58,9 +58,30 @@ pred_fun <- function (b, spp, BCR, PROJ) {
     writeRaster(rrr, fout, overwrite=TRUE)
     invisible(TRUE)
 }
+pred_fun_all <- function (spp, b, BCR, PROJ) {
+    fin <- file.path(ROOT2, "out", PROJ, spp, "ALL",
+        paste0("gnmboot-", spp, "-ALL-", b, ".RData"))
+    e <- new.env()
+    load(fin, envir=e)
+    rrr <- predict_gbm(e$out, ND, r1, 0)
+    if (!dir.exists(file.path(ROOT2, "out", "partsall", spp)))
+        dir.create(file.path(ROOT2, "out", "partsall", spp))
+    fout <- file.path(ROOT2, "out", "partsall", spp,
+        paste0("pred-", spp, "-BCR_", BCR, "-", PROJ, "-", b, ".tif"))
+    writeRaster(rrr, fout, overwrite=TRUE)
+    invisible(TRUE)
+}
 load_fun <- function () {
     r1 <- raster(file.path(ROOT1, "data", "templates", paste0("bcr-template-", BCR, ".grd")))
     ND <- readRDS(file.path(ROOT1, paste0("STACK-ND-BCR_", BCR, ".rds")))
+    ND$data$YEAR <- 2011
+    assign("r1", r1, envir=.GlobalEnv)
+    assign("ND", ND, envir=.GlobalEnv)
+    invisible(TRUE)
+}
+load_fun_all <- function () {
+    r1 <- raster(file.path(ROOT1, "data", "templates", paste0("bcr-template-", BCR, ".grd")))
+    ND <- readRDS(file.path(ROOT1, paste0("STACK-ALL-BCR_", BCR, ".rds")))
     ND$data$YEAR <- 2011
     assign("r1", r1, envir=.GlobalEnv)
     assign("ND", ND, envir=.GlobalEnv)
@@ -89,24 +110,30 @@ tmpcl <- clusterEvalQ(cl, library(gbm))
 tmpcl <- clusterEvalQ(cl, library(rgdal))
 
 cat("OK\n* Establishing checkpoint ... ")
-DONE <- list.files(file.path(ROOT2, "out", "parts"))
-TOGO <- setdiff(SPP, DONE)
+#DONE <- list.files(file.path(ROOT2, "out", "partsall"))
+#TOGO <- setdiff(SPP, DONE)
 
 cat("OK\n* Start running predictions:\n")
 set.seed(as.integer(Sys.time()))
 ncl <- if (interactive())
     nodeslist else length(nodeslist)
 #while (length(TOGO) > 0) {
-for (counter in 1:10) {
-    spp <- sample(TOGO, 1)
+for (counter in 1:5) {
+#    spp <- sample(TOGO, 1)
+    DONE <- list.files(file.path(ROOT2, "out", "partsall"))
+    TOGO <- setdiff(SPP, DONE)
+    spp <- sample(TOGO, min(32, length(TOGO)))
     cat("* Doing species", spp, "\n")
     for (BCR in u) {
         cat("\t- species", spp, "in BCR", BCR, "...")
-        clusterExport(cl, c("load_fun", "predict_gbm", "ROOT1", "BCR", "ROOT2"))
-        clusterEvalQ(cl, load_fun())
+        clusterExport(cl, c("load_fun_all", "predict_gbm", "ROOT1", "BCR", "ROOT2"))
+#        clusterEvalQ(cl, load_fun())
+        clusterEvalQ(cl, load_fun_all())
         ## predict for runs: use patLapply here
-        parLapply(cl=cl, X=seq_len(ncl), fun=pred_fun,
-            spp=spp, BCR=BCR, PROJ=PROJ)
+#        parLapply(cl=cl, X=seq_len(ncl), fun=pred_fun,
+#            spp=spp, BCR=BCR, PROJ=PROJ)
+        parLapply(cl=cl, X=spp, fun=pred_fun_all,
+            b=1, BCR=BCR, PROJ=PROJ)
         #for (b in 1:B) {
         #    pred_fun(b=b, spp=spp, BCR=BCR, PROJ=PROJ)
         #}

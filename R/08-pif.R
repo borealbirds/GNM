@@ -27,7 +27,7 @@ a <- rbind(a1,a2)
 summary(a)
 
 Tab1$reg <- Tab1$region
-levels(Tab1$reg) <- c("10", "11", "12", "13", "14", "4", "5", "6", "7", "8", "9", "CAN")
+levels(Tab1$reg) <- sapply(strsplit(levels(Tab1$reg), " "), function(z) z[1])
 
 rownames(Tab1) <- paste0(Tab1$id, "_", Tab1$reg)
 rownames(a) <- paste0(a$id, "_", a$region)
@@ -41,11 +41,41 @@ x <- data.frame(id=Tab1[i,"id"], region=Tab1[i,"reg"],
 summary(x)
 x$logNpix <- log(x$Npix)
 x$logNpif <- log(x$Npif)
+x$region <- droplevels(x$region)
 
 plot(log(Npif) ~ log(Npix), x)
 abline(0,1)
 plot(Npif ~ Npix, x)
 abline(0,1)
+
+lm(Npix ~ Npif-1, x)
+b <- list(Canada=coef(lm(Npix ~ Npif-1, x)))
+for (i in levels(x$region))
+    b[[paste("BCR", i)]] <- coef(lm(Npix ~ Npif-1, x[x$region == i,]))
+bb <- unlist(b)
+names(bb) <- names(b)
+
+data.frame(b=bb)
+
+boxplot(log(Npix/Npif) ~ region, x)
+
+library(ggplot2)
+
+x$logRatio <- log10(x$Npix/x$Npif)
+x <- droplevels(x[!is.na(x$logRatio) & is.finite(x$logRatio),])
+x2 <- x
+levels(x2$region)[] <- "Canada"
+x <- rbind(x, x2)
+
+p <- ggplot(x, aes(x=region, y=logRatio)) +
+    geom_violin(draw_quantiles=0.5, scale="width", fill="gold") +
+    geom_hline(yintercept=0, col=2, lty=2) +
+    geom_hline(yintercept=median(x$logRatio), col=2) +
+    xlab("Bird Conservation Regions") +
+    ylab(expression(log[10](N[PIX]/N[PIF]))) +
+    theme_minimal() +
+    theme(legend.position = "none")
+ggsave("~/GoogleWork/bam/pif-pix-gnm.png", p, width=8, height=6)
 
 ## calculate BCR/prov level abundances
 

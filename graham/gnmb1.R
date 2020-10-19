@@ -2,7 +2,7 @@
 ## file name for data bundle, need to be in /data/ dir
 fn <- "BAMdb-GNMsubset-2020-01-08.RData"
 ## project name for storing the output
-PROJ <- "all"
+PROJ <- "all2"
 ## output directory
 OUTDIR <- if (interactive())
     paste0("d:/bam/BAM_data_v2019/gnm/out/", PROJ) else paste0("/scratch/psolymos/out/", PROJ)
@@ -90,24 +90,26 @@ run_brt_boot <- function(b, spp) {
         species=spp, region=BCR, iteration=b, elapsed=proc.time()["elapsed"]-t0)
     out
 }
-run_brt_boot_all <- function(b, spp, nmax=50000, nt=10000) {
+run_brt_boot_all <- function(spp, b=1, nmax=50000, nt=10000, clim_only=FALSE) {
     if (!dir.exists(paste0(OUTDIR, "/", spp)))
         dir.create(paste0(OUTDIR, "/", spp))
     bcr <- "ALL"
     if (!dir.exists(paste0(OUTDIR, "/", spp, "/", bcr)))
         dir.create(paste0(OUTDIR, "/", spp, "/", bcr))
     fout <- paste0(OUTDIR, "/", spp, "/", bcr, "/gnmboot-",
-        spp, "-", bcr, "-", b, ".RData")
+        spp, "-", bcr, "-", b,
+        if (clim_only) "-climonly" else "",
+        ".RData")
     if (!file.exists(fout)) {
-        out <- .run_brt_boot_all(b, spp, nmax=nmax, nt=nt)
+        out <- .run_brt_boot_all(b, spp, nmax=nmax, nt=nt, clim_only = clim_only)
         save(out, file=fout)
     }
     invisible(TRUE)
 }
-.run_brt_boot_all <- function(b, spp, nmax=50000, nt=10000, verbose=interactive()) {
+.run_brt_boot_all <- function(b, spp, nmax=50000, nt=10000, clim_only=FALSE, verbose=interactive()) {
     t0 <- proc.time()["elapsed"]
     ## create data subset for BCR unit
-    cn <- c("nalc", "ROAD", "Landsc750_Tsug_Spp_v1", "Landsc750_Alnu_Rub_v1",
+    cn1 <- c("nalc", "ROAD", "Landsc750_Tsug_Spp_v1", "Landsc750_Alnu_Rub_v1",
         "LandCover_VegTreed_v1.1", "Species_Fagu_Gra_v1", "Landsc750_Betu_All_v1",
         "Structure_Volume_Total_v1", "Landsc750_Acer_Sah_v1", "Landsc750_Tsug_Het_v1",
         "Landsc750_Popu_Tri_v1", "Landsc750_Abie_Las_v1", "Landsc750_Jugl_Nig_v1",
@@ -156,6 +158,13 @@ run_brt_boot_all <- function(b, spp, nmax=50000, nt=10000) {
         "Species_Sali_Spp_v1", "Species_Juni_Vir_v1", "Species_Abie_Ama_v1",
         "Species_Lari_Lya_v1", "Species_Acer_Mac_v1", "Species_Frax_Pen_v1",
         "Species_Acer_Neg_v1", "dev750")
+    cn2 <- c(#"TPI", "TRI", "slope", "roughness",
+        "AHM", "bFFP", "CMD", "DD_0",
+        "DD_18", "DD18", "DD5", "eFFP", "EMT", "EXT", "FFP", "MAP", "MAT",
+        "MCMT", "MSP", "MWMT", "NFFD", "PPT_sm", "PPT_wt", "SHM", "Tave_sm",
+        "Tave_wt", "TD", "ROAD")
+    cn <- if (clim_only)
+        cn2 else cn1
     DAT <- data.frame(
         count=as.numeric(yy[, spp]),
         offset=off[, spp],
@@ -163,6 +172,8 @@ run_brt_boot_all <- function(b, spp, nmax=50000, nt=10000) {
         YEAR=dd$YEAR,
         ARU=dd$ARU, # ARU added here, but not as layer
         dd2[,cn]) # no cn subset here
+    if (clim_only)
+        DAT$count <- ifelse(DAT$count > 0, 1, 0)
     ## subsample based on 2.5x2.5km^2 cell x year units
     DAT <- DAT[sample.int(nrow(DAT)),]
     DAT <- DAT[!duplicated(DAT$cyid),]
@@ -181,7 +192,7 @@ run_brt_boot_all <- function(b, spp, nmax=50000, nt=10000) {
             interaction.depth = 3,
             shrinkage = 1/nt,
             bag.fraction = 0.5,
-            distribution = "poisson",
+            distribution = if (clim_only) "bernoulli" else "poisson",
             var.monotone = NULL,
             keep.data = FALSE,
             verbose = verbose,
@@ -253,11 +264,11 @@ ncl <- if (interactive())
     nodeslist else length(nodeslist)
 #while (length(TOGO) > 0) {
 for (counter in 1:10) { # run only 5 species (~10hrs)
-    spp <- sample(TOGO, 1)
+    spp <- sample(TOGO, min(32, length(TOGO)))
     cat("\n  -", length(DONE), "done,", length(TOGO), "more to go, doing", spp, "on", date(), "... ")
     #res <- lapply(X=seq_len(ncl), fun=run_brt_boot, spp=spp)
 #    parLapply(cl=cl, X=seq_len(ncl), fun=run_brt_boot, spp=spp)
-    parLapply(cl=cl, X=seq_len(ncl), fun=run_brt_boot_all, spp=spp)
+    parLapply(cl=cl, X=spp, fun=run_brt_boot_all, clim_only=TRUE)
     DONE <- list.files(OUTDIR)
     TOGO <- setdiff(SPP, DONE)
 }

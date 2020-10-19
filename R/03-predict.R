@@ -5,7 +5,7 @@ library(dismo)
 
 ROOT <- "d:/bam/BAM_data_v2019/gnm"
 PROJ <- "run3"
-load(file.path(ROOT, "data", "BAMdb-GNMsubset-2019-10-29.RData"))
+load(file.path(ROOT, "data", "BAMdb-GNMsubset-2020-01-08.RData"))
 
 #SPP <- colnames(yy)
 #SPP <- c("ALFL", "AMRO", "BOCH", "BTNW", "CAWA",
@@ -63,6 +63,100 @@ for (i in u) {
     saveRDS(ND, file=file.path(ROOT, paste0("STACK-ND-BCR_", i, ".rds")))
 
 }
+
+
+## prediction stack for Canada
+if (FALSE) {
+    pset <- c("nalc", "ROAD", "Landsc750_Tsug_Spp_v1", "Landsc750_Alnu_Rub_v1",
+        "LandCover_VegTreed_v1.1", "Species_Fagu_Gra_v1", "Landsc750_Betu_All_v1",
+        "Structure_Volume_Total_v1", "Landsc750_Acer_Sah_v1", "Landsc750_Tsug_Het_v1",
+        "Landsc750_Popu_Tri_v1", "Landsc750_Abie_Las_v1", "Landsc750_Jugl_Nig_v1",
+        "Landsc750_Popu_Spp_v1", "Landsc750_Betu_Pap_v1", "Species_Jugl_Nig_v1",
+        "Landsc750_Acer_Spp_v1", "Landsc750_Ulmu_Ame_v1", "Landsc750_Pinu_Str_v1",
+        "Landsc750_Arbu_Men_v1", "Landsc750_Pinu_Ban_v1", "Landsc750_Prun_Pen_v1",
+        "Landsc750_Tili_Ame_v1", "Landsc750_Acer_Mac_v1", "Landsc750_Pice_Spp_v1",
+        "Structure_Stand_Age_v1", "Landsc750_Genc_Spp_v1", "Landsc750_Cham_Noo_v1",
+        "Landsc750_Abie_Spp_v1", "Landsc750_Pice_Gla_v1", "Landsc750_Ostr_Vir_v1",
+        "Landsc750_Frax_Ame_v1", "Landsc750_Popu_Bal_v1", "Landsc750_Pinu_Pon_v1",
+        "Species_Betu_All_v1", "Landsc750_Popu_Gra_v1", "TD", "Landsc750_Thuj_Occ_v1",
+        "Landsc750_Pice_Eng_v1", "Structure_Stand_CrownClosure_v1", "Landsc750_Pice_Sit_v1",
+        "Landsc750_Abie_Ama_v1", "Landsc750_Lari_Occ_v1", "Species_Quer_Alb_v1",
+        "Landsc750_Tsug_Mer_v1", "SpeciesGroups_Broadleaf_Spp_v1", "Landsc750_Pinu_Mon_v1",
+        "Species_Genh_Spp_v1", "PPT_wt", "Landsc750_Carp_Car_v1", "Landsc750_Sorb_Ame_v1",
+        "Landsc750_Pinu_Res_v1", "Landsc750_Acer_Sac_v1", "Landsc750_Betu_Spp_v1",
+        "Landsc750_Lari_Spp_v1", "Species_Quer_Rub_v1", "Landsc750_Lari_Lar_v1",
+        "Landsc750_Frax_Nig_v1", "Landsc750_Frax_Pen_v1", "Species_Tsug_Can_v1",
+        "Species_Alnu_Rub_v1", "Structure_Biomass_TotalDead_v1", "Landsc750_Pinu_Spp_v1",
+        "Landsc750_Prun_Ser_v1", "Species_Tsug_Het_v1", "Species_Prun_Pen_v1",
+        "Landsc750_Quer_Mac_v1", "NFFD", "Species_Tili_Ame_v1", "Landsc750_Betu_Pop_v1",
+        "Species_Tsug_Spp_v1", "Tave_sm", "Landsc750_Alnu_Spp_v1", "Landsc750_Pinu_Syl_v1",
+        "SpeciesGroups_Unknown_Spp_v1", "Landsc750_Acer_Spi_v1", "Species_Popu_Tri_v1",
+        "Species_Popu_Tre_v1", "Species_Acer_Spp_v1", "Landsc750_Cary_Cor_v1",
+        "Landsc750_Pinu_Alb_v1", "SHM", "Species_Pice_Spp_v1", "Species_Betu_Pap_v1",
+        "Landsc750_Pice_Abi_v1", "Landsc750_Malu_Spp_v1", "Species_Frax_Ame_v1",
+        "Species_Pice_Rub_v1", "Landsc750_Lari_Lya_v1", "Species_Pinu_Ban_v1",
+        "Landsc750_Juni_Vir_v1", "roughness", "Species_Pinu_Str_v1",
+        "Landsc750_Sali_Spp_v1", "LandCover_Veg_v1.1", "Landsc750_Acer_Neg_v1",
+        "Species_Acer_Rub_v1", "Species_Ostr_Vir_v1", "Landsc750_Jugl_Cin_v1",
+        "Species_Popu_Spp_v1", "Species_Thuj_Pli_v1", "Landsc750_Acer_Pen_v1",
+        "Species_Carp_Car_v1", "Species_Ulmu_Ame_v1", "Species_Popu_Gra_v1",
+        "Species_Thuj_Occ_v1", "Species_Pice_Mar_v1", "Species_Sorb_Ame_v1",
+        "Species_Pseu_Men_v1", "Species_Pice_Eng_v1", "Species_Pinu_Con_v1",
+        "Species_Prun_Ser_v1", "Species_Frax_Nig_v1", "Species_Acer_Sah_v1",
+        "Species_Betu_Pop_v1", "Species_Quer_Spp_v1", "Species_Pinu_Mon_v1",
+        "Species_Abie_Bal_v1", "Species_Genc_Spp_v1", "Species_Pice_Gla_v1",
+        "led750", "Species_Pinu_Res_v1", "Species_Cham_Noo_v1", "Species_Lari_Spp_v1",
+        "Species_Pice_Sit_v1", "Species_Popu_Bal_v1", "Species_Lari_Lar_v1",
+        "Species_Abie_Spp_v1", "Species_Pinu_Pon_v1", "Species_Alnu_Spp_v1",
+        "Species_Tsug_Mer_v1", "TPI", "Species_Quer_Mac_v1", "Species_Acer_Spi_v1",
+        "Species_Betu_Spp_v1", "Species_Pinu_Alb_v1", "Species_Acer_Pen_v1",
+        "Species_Cary_Cor_v1", "Species_Malu_Spp_v1", "Species_Pice_Abi_v1",
+        "Species_Pinu_Syl_v1", "Species_Jugl_Cin_v1", "Species_Acer_Sac_v1",
+        "Species_Abie_Las_v1", "Species_Lari_Occ_v1", "Species_Pinu_Spp_v1",
+        "Species_Sali_Spp_v1", "Species_Juni_Vir_v1", "Species_Abie_Ama_v1",
+        "Species_Lari_Lya_v1", "Species_Acer_Mac_v1", "Species_Frax_Pen_v1",
+        "Species_Acer_Neg_v1", "dev750")
+    pset <- c(#"TPI", "TRI", "slope", "roughness",
+        "AHM", "bFFP", "CMD", "DD_0",
+        "DD_18", "DD18", "DD5", "eFFP", "EMT", "EXT", "FFP", "MAP", "MAT",
+        "MCMT", "MSP", "MWMT", "NFFD", "PPT_sm", "PPT_wt", "SHM", "Tave_sm",
+        "Tave_wt", "TD", "ROAD")
+
+u <- u[u<200]
+for (i in u) {
+    cat("\n\n-------------------\nLoading stack for BCR", i, "\n\n")
+    flush.console()
+    gc()
+
+    pr <- stack(file.path(ROOT, "data", "subunits", paste0("bcr", i, "all_1km.grd")))
+    print(compare_sets(pset, names(pr)))
+    cat("\n\n")
+
+    n <- length(values(pr[[1]]))
+    nd <- matrix(0, n, length(pset))
+    colnames(nd) <- pset
+    for (j in pset) {
+        cat("- Adding", j, which(pset==j), "/", length(pset), "\n");flush.console()
+        nd[,j] <- values(pr[[j]])
+    }
+    cat("- Dealing with NAs\n");flush.console()
+    notNA <- rowSums(is.na(nd)) == 0
+    nd <- as.data.frame(nd[notNA,,drop=FALSE])
+    #cat("- Dealing with NALC\n");flush.console()
+    #nd$nalc <- as.factor(nd$nalc)
+
+    cat("- Dealing with offsets\n");flush.console()
+    nd$offset <- 0L
+    cat("- Making a list\n");flush.console()
+    ND <- list(data=nd, n=n, subset=which(notNA), dim=dim(pr))
+    fout <- file.path(ROOT, paste0("STACK-CLIM-BCR_", i, ".rds"))
+    cat("- Saving file:", fout, "\n");flush.console()
+    saveRDS(ND, file=fout)
+    cat("...on to the next one...\n\n");flush.console()
+}
+
+}
+
 
 ## need to set NALC land cover types not used in model (snow/ice) to 0
 
@@ -350,3 +444,36 @@ for (i in 4:14) {
         diff2=setdiff(names(pr), CN),
         NM=sapply(1:107,function(i) sum(!is.na(values(pr[[i]])))))
 }
+
+
+## climate only mosaics
+for (spp in SPP) {
+
+
+    fin <- paste0("d:/bam/BAM_data_v2019/gnm/out/partsall/",spp,
+             "/pred-",spp,"-BCR_",u,"-climonly-1.tif")
+    fout <- paste0("d:/bam/BAM_data_v2019/gnm/out/partsall/",spp,
+             "/pred-",spp,"-CAN-mean-climonly-1.tif")
+
+        r4 <- raster(fin[1])
+        r5 <- raster(fin[2])
+        r60 <- raster(fin[3])
+        r61 <- raster(fin[4])
+        r70 <- raster(fin[5])
+        r71 <- raster(fin[6])
+        r80 <- raster(fin[7])
+        r81 <- raster(fin[8])
+        r82 <- raster(fin[9])
+        r83 <- raster(fin[10])
+        r9 <- raster(fin[11])
+        r10 <- raster(fin[12])
+        r11 <- raster(fin[13])
+        r12 <- raster(fin[14])
+        r13 <- raster(fin[15])
+        r14 <- raster(fin[16])
+        rast <- mosaic(r4, r5, r60, r61, r70, r71,
+            r80, r81, r82, r83, r9, r10, r11, r12, r13, r14, fun=mean)
+        writeRaster(rast, fout, overwrite=TRUE)
+}
+
+

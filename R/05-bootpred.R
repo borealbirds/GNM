@@ -74,8 +74,30 @@ predict_gbm <- function(brt, ND, r1, impute=0) {
 
 SPP <- colnames(yy)
 
+for (BCR in u) {
+    cat("loading stack: BCR", BCR, "\n")
+    flush.console()
+    r1 <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", BCR, "all_1km.grd")))
+    ND <- readRDS(file.path(ROOT, paste0("STACK-CLIM-BCR_", BCR, ".rds")))
+
+    ND$data$YEAR <- 2011
+    for (spp in SPP) {
+        cat("\t", spp, "@ BCR", BCR, "\n")
+        flush.console()
+        fin <- paste0("d:/bam/BAM_data_v2019/gnm/out/all2/",
+            spp, "/ALL/gnmboot-", spp, "-ALL-1-climonly.RData")
+        e <- new.env()
+        aa <- try(load(fin, envir=e))
+        rrr <- predict_gbm(e$out, ND, r1, 0)
+        fout <- paste0("d:/bam/BAM_data_v2019/gnm/out/partsall/",spp,
+            "/pred-",spp,"-BCR_",BCR,"-climonly-1.tif")
+        writeRaster(rrr, fout, overwrite=TRUE)
+    }
+}
+
 B <- 32
 spp <- "CAWA"
+u <- u[u<200]
 
 for (BCR in u) {
     cat("loading stack: BCR", BCR, "\n")
@@ -83,8 +105,6 @@ for (BCR in u) {
     #spp <- "OSFL"
     r1 <- raster(file.path(ROOT, "data", "subunits", paste0("bcr", BCR, "all_1km.grd")))
     ND <- readRDS(file.path(ROOT, paste0("STACK-ND-BCR_", BCR, ".rds")))
-
-    ND$data$YEAR <- 2011
 
     ## predict for runs
     for (b in 1:B) {
@@ -142,6 +162,35 @@ for (BCR in u) {
 
 }
 
+mosaic_fun <- function(fin, fout) {
+    r4 <- raster(fin[1])
+    r5 <- raster(fin[2])
+    r60 <- raster(fin[3])
+    r61 <- raster(fin[4])
+    r70 <- raster(fin[5])
+    r71 <- raster(fin[6])
+    r80 <- raster(fin[7])
+    r81 <- raster(fin[8])
+    r82 <- raster(fin[9])
+    r83 <- raster(fin[10])
+    r9 <- raster(fin[11])
+    r10 <- raster(fin[12])
+    r11 <- raster(fin[13])
+    r12 <- raster(fin[14])
+    r13 <- raster(fin[15])
+    r14 <- raster(fin[16])
+    rast <- mosaic(r4, r5, r60, r61, r70, r71,
+        r80, r81, r82, r83, r9, r10, r11, r12, r13, r14,
+        fun=mean)
+    writeRaster(rast, fout, overwrite=TRUE)
+    invisible()
+}
+for (spp in SPP) {
+    fi <- list.files(paste0("d:/bam/BAM_data_v2019/gnm/out/partsall/", spp), full.names=TRUE)
+    fo <- paste0("d:/bam/BAM_data_v2019/gnm/out/partsall/", spp, "/", spp, "-ALL-Mean.tif")
+    mosaic_fun(fi, fo)
+}
+
 ## mosaic the mean and SD maps across regions
 
 mosaic_fun <- function(fin, fout) {
@@ -176,6 +225,7 @@ mosaic_fun <- function(fin, fout) {
     writeRaster(rast, fout, overwrite=TRUE)
     invisible()
 }
+
 
 SPP <- c("CAWA", "OSFL", "OVEN", "BBWA")
 #spp <- "OSFL"
@@ -254,8 +304,12 @@ for (spp in SPP) {
     cat(spp, "\n")
     flush.console()
 
-    f <- file.path(ROOT, "artifacts2", spp, paste0(spp, "-BCR_ALL-boot-Mean.tif"))
+    #f <- file.path(ROOT, "artifacts2", spp, paste0(spp, "-BCR_ALL-boot-Mean.tif"))
     #f <- file.path(ROOT, "artifacts2", spp, paste0(spp, "-BCR_ALL-boot-Mean2.tif"))
+
+    f <- paste0("d:/bam/BAM_data_v2019/gnm/out/partsall/",spp,"/pred-",spp,"-CAN-mean-climonly-1.tif")
+
+
     rast <- raster(f)
     MAX <- 2*cellStats(rast, 'mean')
     png(gsub("\\.tif", "\\.png", f), height=2000, width=3000)
@@ -266,6 +320,7 @@ for (spp in SPP) {
     plot(BCR, add=TRUE)
     par(op)
     dev.off()
+if (FALSE) {
 
     f <- file.path(ROOT, "artifacts2", spp, paste0(spp, "-BCR_ALL-boot-SD.tif"))
     #f <- file.path(ROOT, "artifacts2", spp, paste0(spp, "-BCR_ALL-boot-SD2.tif"))
@@ -278,6 +333,26 @@ for (spp in SPP) {
     plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
     plot(BCR, add=TRUE)
     par(op)
+    par(op)
+    dev.off()
+}
+}
+
+
+for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
+
+    f <- paste0("d:/bam/BAM_data_v2019/gnm/out/partsall/", spp, "/", spp, "-ALL-Mean.tif")
+    #f <- file.path(ROOT, "artifacts2", spp, paste0(spp, "-BCR_ALL-boot-Mean2.tif"))
+    rast <- raster(f)
+    MAX <- 2*cellStats(rast, 'mean')
+    png(gsub("\\.tif", "\\.png", f), height=2000, width=3000)
+    op <- par(cex.main=3, mfcol=c(1,1), oma=c(0,0,0,0), mar=c(0,0,5,0))
+    plot(rast, col=bluegreen.colors(15), axes=FALSE, legend=TRUE, main=paste(spp, "mean"), box=FALSE)
+    plot(PROV, col="grey", add=TRUE)
+    plot(LAKES,col="#aaaaff", border=NA, add=TRUE)
+    plot(BCR, add=TRUE)
     par(op)
     dev.off()
 }

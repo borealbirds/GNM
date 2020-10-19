@@ -367,3 +367,9 @@ file.copy(fin, fout, overwrite=TRUE)
 }
 
 
+
+xxx <- jsonlite::fromJSON("https://borealbirds.github.io/api/v4/species/")
+SPP <- as.character(xxx$id)
+rownames(xxx) <- SPP
+
+tmp <- list.files("~/repos/api/docs/v4/species/")

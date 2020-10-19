@@ -836,8 +836,8 @@ write.csv(IM, row.names=FALSE, file="~/repos/api/docs/v4/BAMv4-importance-2020-0
 
 library(openxlsx)
 
-l <- list(iris = iris, mtcars = mtcars, chickwts = chickwts, quakes = quakes)
-openxlsx::write.xlsx(l, file = "inst/extdata/datasets.xlsx")
+#l <- list(iris = iris, mtcars = mtcars, chickwts = chickwts, quakes = quakes)
+#openxlsx::write.xlsx(l, file = "inst/extdata/datasets.xlsx")
 
 fl <- c(
     metadata="BAMv4-metadata-2020-02-20.csv",
