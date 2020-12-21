@@ -40,8 +40,34 @@ table(LC$label)
 LC$label <- droplevels(LC$label)
 
 
+## figure out which species has detections in a X buffer of RoF
+
+load("d:/bam/BAM_data_v2019/gnm/data/BAMdb-patched-2019-06-04.RData")
+
+sf <- sf::st_as_sf(dd, coords = c("X","Y"))
+sf <- st_set_crs(sf, "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+sf <- st_transform(sf, st_crs(rt))
+
+polyb <- st_buffer(poly, 100000)
+
+o <- st_join(sf, polyb, join = st_intersects)
+str(o)
+table(is.na(o$area_ha))
+IN <- !is.na(o$area_ha)
+
+#lc0 <- raster("~/repos/recurring/offset/data/lcc.tif")
+#plot(lc0)
+#plot(xy,pch=".",col="#00000088",add=TRUE)
+#plot(poly$geometry,add=TRUE,border=4)
+#plot(polyb$geometry,add=TRUE,border=4, lty=2)
+
+
+y <- yy[IN,SPP]
+tab$ndet <- colSums(y > 0)
+
 RES <- list()
-SPP <- tab$id
+SPP <- rownames(tab[tab$ndet > 0,])
+
 
 #spp <- "ALFL"
 for (spp in SPP) {
@@ -168,8 +194,8 @@ fD <- function(o) {
         Unit="males per ha")
 }
 
-NNN <- do.call("rbind", lapply(RES, fN))
-DDD <- do.call("rbind", lapply(RES, fD))
+NNN <- do.call("rbind", lapply(RES[SPP], fN))
+DDD <- do.call("rbind", lapply(RES[SPP], fD))
 
 write.csv(NNN, row.names = FALSE,
     file=paste0(OUT, "/species/rof-abundance.csv"))
@@ -206,8 +232,8 @@ library(whisker)
 
 TMP <-
 '---
-title: {{ENG}} - {{FRE}}
-subtitle: (_{{SCI}}_)
+title: {{ENG}}
+subtitle: {{SCI}}
 ---
 
 The population size of {{ENG}} in the Ring of Fire region was {{EST}} ({{LO}}, {{HI}}) million individuals based on the [BAM National Models](https://dx.doi.org/10.5281/zenodo.4018335).
