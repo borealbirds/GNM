@@ -45,15 +45,31 @@ SPP <- tab$id
 
 #spp <- "ALFL"
 for (spp in SPP) {
-    NN <- numeric(32)
-    DD <- matrix(0, 32, nlevels(LC$label))
-    colnames(DD) <- levels(LC$label)
+    cat(spp, "\n")
+    flush.console()
+
 
     rm <- raster(file.path(ROOT, spp, paste0("pred-", spp, "-CAN-Mean.tif")))
     rm <- trim(mask(rm, poly))
-    rs <- raster(file.path(ROOT, spp, paste0("pred-", spp, "-CAN-SD.tif")))
-    rs <- trim(mask(rs, poly))
+#    rs <- raster(file.path(ROOT, spp, paste0("pred-", spp, "-CAN-SD.tif")))
+#    rs <- trim(mask(rs, poly))
 
+    if (!dir.exists(paste0(OUT, "/species/", spp)))
+        dir.create(paste0(OUT, "/species/", spp))
+    png(paste0(OUT, "/species/", spp, "/map.png"), width=500, height=500)
+    op <- par(mfrow=c(1,1), mar=c(1,1,2,6))
+    plot(rm, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"),
+        main="Mean Density (males/ha)")
+#    plot(rs, axes=FALSE, box=FALSE, col=hcl.colors(100, "Blue-Red"),
+#        main="Std. Dev.")
+    par(op)
+    dev.off()
+}
+
+for (spp in SPP) {
+    NN <- numeric(32)
+    DD <- matrix(0, 32, nlevels(LC$label))
+    colnames(DD) <- levels(LC$label)
     #i <- 1
     for (i in 1:32) {
         cat(spp, i, "\n")
@@ -74,14 +90,6 @@ for (spp in SPP) {
 
     if (!dir.exists(paste0(OUT, "/species/", spp)))
         dir.create(paste0(OUT, "/species/", spp))
-    png(paste0(OUT, "/species/", spp, "/map.png"), width=800, height=400)
-    op <- par(mfrow=c(1,2), mar=c(1,1,2,6))
-    plot(rm, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"),
-        main="Mean Density (males/ha)")
-    plot(rs, axes=FALSE, box=FALSE, col=hcl.colors(100, "Blue-Red"),
-        main="Std. Dev.")
-    par(op)
-    dev.off()
 
     CI <- t(apply(DD, 2, quantile, c(0.05, 0.95)))
     DF <- data.frame(landcover=factor(colnames(DD),
