@@ -174,6 +174,8 @@ save(RES, tab, NNN, DDD, file="~/GoogleWork/bam/RoF/rof-results.RData")
 
 ## writing pages
 
+load("~/GoogleWork/bam/RoF/rof-results.RData")
+
 TOC <-
 '---
 title: List of Species
@@ -204,7 +206,7 @@ The population size of {{ENG}} in the Ring of Fire region was {{EST}} ({{LO}}, {
 
 # Maps
 
-Mean density (males per ha) is the average of 32 bootstrap based prediction maps. The same maps were used to calculat standard deviation (same units as mean) that represent bootstrap uncertainty of the density estimates.
+Mean density (males per ha) is the average of 32 bootstrap based prediction maps.
 
 ![Distribution map]({{B}}/species/{{ID}}/map.png)
 
@@ -226,6 +228,7 @@ with estimates and 90% confidence interval (in males per ha)
 
 '
 
+SPP <- rownames(tab)
 for (spp in SPP) {
     o <- RES[[spp]]
 
