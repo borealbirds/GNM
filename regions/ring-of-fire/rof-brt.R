@@ -124,6 +124,7 @@ for (spp in SPP) {
 library(mefa4)
 library(gbm)
 library(dismo)
+library(ggplot2)
 
 rel_inf <- function(res) {
     rel.inf <- relative.influence(res, res$n.trees)
@@ -134,6 +135,41 @@ rel_inf <- function(res) {
     attr(out, "n.trees") <- res$n.trees
     out
 }
+
+.plot_fun <- function(i, res, u) {
+    j <- as.character(u$var[i])
+    x <- plot.gbm(res, j,
+        n.trees = res$n.trees,
+        return.grid=TRUE,
+        type="response",
+        ylab=paste(res$rof_settings$spp, "density (males/ha)"),
+        xlab=paste0(j, " (", round(u$rel.inf[i], 2), "%)"))
+    colnames(x) <- c("x", "y")
+    x$var <- paste0(j, " (", round(u$rel.inf[i], 2), "%)")
+    attr(x, "out.attrs") <- NULL
+    x
+}
+plot_fun <- function(res) {
+    u <- rel_inf(res)
+    xx <- do.call(rbind, lapply(1:12, .plot_fun, res, u))
+    p <- ggplot(xx, aes(x=x, y=y)) +
+        geom_line() +
+        facet_wrap(vars(var), scales="free_x") +
+        ylab(paste(res$rof_settings$spp, "density (males/ha)")) +
+        xlab("Predictor values") +
+        theme_minimal()
+}
+
+for (spp in SPP) {
+    cat(spp, "\n")
+    load(paste0("d:/bam/2021/rof/brt-xv/", spp, ".RData"))
+    if (inherits(res, "gbm")) {
+        p <- plot_fun(res)
+        ggsave(sprintf("d:/bam/2021/rof/brt-xv-pred-mosaic/%s-effects12.png", spp), p)
+
+    }
+}
+
 
 RIall <-NULL
 for (spp in SPP) {
