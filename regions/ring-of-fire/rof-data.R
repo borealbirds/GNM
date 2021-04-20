@@ -27,6 +27,15 @@ xx2 <- e$SScombo.final.distadded
 rm(e)
 gc()
 
+# eskers
+load("d:/bam/2021/rof/predictors-data/RoF_SpaDESspatialpointcountdata_April17.RData")
+stopifnot(all(xx2$PKEY_V4 == SScombo.eskerdata.added$PKEY_V4))
+# eskerLCC250      prop.eskerLCC250   prob.esker.missed    eskerpoint
+summary(SScombo.eskerdata.added[,setdiff(colnames(SScombo.eskerdata.added), colnames(xx2))])
+with(SScombo.eskerdata.added, table(lc=eskerLCC250, pt=eskerpoint))
+
+xx2 <- data.frame(xx2, eskerpoint=SScombo.eskerdata.added$eskerpoint)
+
 # V6 data
 load("d:/bam/2021/rof/BAMv6_ONBBS.RData")
 
@@ -77,7 +86,7 @@ get_cn <- function(z, rmax=0.9) {
     }
     union(as.character(cr[,1]), as.character(cr[,2]))
 }
-cn2 <- get_cn(xx2)
+cn2 <- get_cn(xx2[,colnames(xx2) != "NEAR_DIST"])
 
 ## year matching for surveys ??? not sure what is multi-year, leave it for now
 
@@ -107,8 +116,5 @@ B <- 250
 set.seed(1)
 BB <- sapply(1:B, resample_fun)
 
-save(y, off, xx1, xx2, cn2, SPP, BB, file="d:/bam/2021/rof/BAMv6_RoFpackage.RData")
+save(y, off, xx1, xx2, cn2, SPP, BB, file="d:/bam/2021/rof/BAMv6_RoFpackage_April20.RData")
 
-## TODO
-
-## - remove NEAR_DIST
