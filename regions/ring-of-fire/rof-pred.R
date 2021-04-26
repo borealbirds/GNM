@@ -11,7 +11,8 @@ names(fl) <- gsub("\\.tif", "", fl)
 
 #load("d:/bam/2021/rof/BAMv6_RoFpackage.RData")
 
-cn2 <- c("agriculture_G750.O", "bedrock_G750.O", "biomass2015.ntems",
+cn2 <- c("eskerpoint",
+    "agriculture_G750.O", "bedrock_G750.O", "biomass2015.ntems",
     "bog_G750.O", "communities_G750.O", "coniftreed_G750.O", "decidtreed_G750.O",
     "disturbance_G750.O", "elev", "fen_G750.O", "G750LandCover_Veg_v1.grd",
     "G750LandCover_VegNonTreed_v1.grd", "G750LandCover_VegTreed_v1.grd",
@@ -47,6 +48,7 @@ compare_sets(names(fl), cn2)
 r <- raster(paste0(
         "d:/bam/2021/rof/predictors-layers/Clip to BCR 7 and 8 LCC/",
        "elev.tif"))
+
 re <- r
 values(re)[!is.na(values(re))] <- 1
 pl <- rgdal::readOGR("d:/bam/2021/rof/predictors-layers/ecoregions-clipped/BCR7and8Ontario.shp")
@@ -62,7 +64,15 @@ writeRaster(re, paste0(
 n <- length(values(r))
 Chunks <- sort(sample(1:10, n, replace = TRUE))
 table(Chunks)
-save(Chunks, file="d:/bam/2021/rof/predictors-layers/chunks/chunks.RData")
+save(Chunks, file="d:/bam/2021/rof/predictors-layers/chunks2/chunks.RData")
+
+ree <- raster("d:/bam/2021/rof/predictors-layers/esker_LCC_raster/esker_LCC_raster.tif")
+ree <- projectRaster(ree, r, method="ngb")
+table(values(ree), useNA="a")
+values(ree)[!is.na(values(r)) & is.na(values(ree))] <- 0
+writeRaster(ree, paste0(
+        "d:/bam/2021/rof/predictors-layers/Clip to BCR 7 and 8 LCC/",
+       "eskerpoint.tif"))
 
 #j <- 1
 cn2x <- c("ecozone", cn2)
@@ -85,7 +95,7 @@ for (j in 1:10) {
 
     }
 
-    save(M, file=paste0("d:/bam/2021/rof/predictors-layers/chunks/variables-", j, ".RData"))
+    save(M, file=paste0("d:/bam/2021/rof/predictors-layers/chunks2/variables-", j, ".RData"))
 }
 
 

@@ -3,10 +3,10 @@ library(gbm)
 library(dismo)
 
 
-load("d:/bam/2021/rof/BAMv6_RoFpackage.RData")
-#xx2$NEAR_DIST <- NULL
-#cn2 <- cn2[cn2 != "NEAR_DIST"]
-cn1 <- c("elev", "treecover", "LIDARheight", "road_yesno", "TPI", "TRI",
+#load("d:/bam/2021/rof/BAMv6_RoFpackage.RData")
+load("d:/bam/2021/rof/BAMv6_RoFpackage_April20.RData")
+cn1 <- c("eskerpoint",
+    "elev", "treecover", "LIDARheight", "road_yesno", "TPI", "TRI",
     "slope", "agriculture_G750.O", "bedrock_G750.O", "bog_G750.O",
     "communities_G750.O", "coniftreed_G750.O", "decidtreed_G750.O",
     "disturbance_G750.O", "fen_G750.O", "heath_G750.O", "marsh_G750.O",
@@ -55,7 +55,8 @@ cn1 <- c("elev", "treecover", "LIDARheight", "road_yesno", "TPI", "TRI",
     "biomass2015.ntems", "volume2015.ntems", "height2015.ntems")
 
 #cn2 <- get_cn(xx2[,cn1])
-cn2 <- c("agriculture_G750.O", "bedrock_G750.O", "biomass2015.ntems",
+cn2 <- c("eskerpoint",
+    "agriculture_G750.O", "bedrock_G750.O", "biomass2015.ntems",
     "bog_G750.O", "communities_G750.O", "coniftreed_G750.O", "decidtreed_G750.O",
     "disturbance_G750.O", "elev", "fen_G750.O", "G750LandCover_Veg_v1.grd",
     "G750LandCover_VegNonTreed_v1.grd", "G750LandCover_VegTreed_v1.grd",
@@ -90,7 +91,7 @@ cn2 <- c("agriculture_G750.O", "bedrock_G750.O", "biomass2015.ntems",
 ## run BRT with xv
 
 run_brt_xv <- function(spp, RATE=0.001) {
-	i <- 1
+    i <- 1
     si <- BB[,i]
     if (sum(y[si, spp]) < 1)
         return(structure(sprintf("0 detections for %s", spp), class="try-error"))
@@ -116,7 +117,7 @@ run_brt_xv <- function(spp, RATE=0.001) {
 for (spp in SPP) {
     cat("\n\n------------------------------", spp, "------------------------------\n\n")
     res <- run_brt_xv(spp)
-    save(res, file=paste0("d:/bam/2021/rof/brt-xv/", spp, ".RData"))
+    save(res, file=paste0("d:/bam/2021/rof/brt2-xv/", spp, ".RData"))
 }
 
 ## check variable importance
@@ -162,11 +163,10 @@ plot_fun <- function(res) {
 
 for (spp in SPP) {
     cat(spp, "\n")
-    load(paste0("d:/bam/2021/rof/brt-xv/", spp, ".RData"))
+    load(paste0("d:/bam/2021/rof/brt2-xv/", spp, ".RData"))
     if (inherits(res, "gbm")) {
         p <- plot_fun(res)
-        ggsave(sprintf("d:/bam/2021/rof/brt-xv-pred-mosaic/%s-effects12.png", spp), p)
-
+        ggsave(sprintf("d:/bam/2021/rof/brt2-xv-pred-mosaic/%s-effects12.png", spp), p)
     }
 }
 
@@ -174,14 +174,24 @@ for (spp in SPP) {
 RIall <-NULL
 for (spp in SPP) {
     cat(spp, "\n")
-    load(paste0("d:/bam/2021/rof/brt-xv/", spp, ".RData"))
+    load(paste0("d:/bam/2021/rof/brt2-xv/", spp, ".RData"))
     if (inherits(res, "gbm")) {
         u <- rel_inf(res)
         u$spp <- spp
         RIall <- rbind(RIall, u)
+        p <- plot_fun(res)
+        ggsave(sprintf("d:/bam/2021/rof/brt2-xv-pred-mosaic/%s-effects12.png", spp), p)
     }
 }
-write.csv(RIall, row.names=FALSE, file="d:/bam/2021/rof/SppBRTVarImp.csv")
+write.csv(RIall, row.names=FALSE, file="d:/bam/2021/rof/SppBRTVarImp_v2.csv")
+
+RIall$n0 <- ifelse(RIall$rel.inf > 0, 1, 0)
+z <- xtabs(~var+n0,RIall)
+z <- z[,"1"]/rowSums(z)
+sort(z)
+z["eskerpoint"]
+which(names(sort(z)) == "eskerpoint")
+# list species with importance matrics
 
 library(ggplot2)
 
