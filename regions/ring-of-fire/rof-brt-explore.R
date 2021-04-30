@@ -1,6 +1,3 @@
-
-## check variable importance
-
 library(mefa4)
 library(gbm)
 library(dismo)
@@ -40,30 +37,6 @@ cn2 <- c("eskerpoint",
     "mixedtreed_G750.O", "mudflat_G750.O", "openwater_G750.O", "road_yesno",
     "slope", "sparsetreed_G750.O", "swamp_G750.O", "TPI", "treecover",
     "turbidwater_G750.O", "volume2015.ntems")
-
-if (FALSE) {
-cn3 <- cn2[grep("G750Species_", cn2)]
-cn3g <- sapply(strsplit(cn3, "_"), "[[", 2)
-cn3s <- sapply(strsplit(cn3, "_"), "[[", 3)
-sort(table(cn3g))
-
-x <- nonDuplicated(xx2[,cn3], xx1$SS_V4)
-colnames(x) <- paste0(cn3g, cn3s)
-
-library(vegan)
-r=rda(x)
-s=scores(r)
-plot(s$species, type="n")
-text(s$species, label=rownames(s$species))
-
-sort(apply(x, 2, max))
-
-xs=scale(x)
-ed <- dist(t(xs))
-
-ed <- as.dist(1-abs(cor(x)))
-plot(hclust(ed, "ward.D2"))
-}
 
 rel_inf <- function(res) {
     rel.inf <- relative.influence(res, res$n.trees)
@@ -164,6 +137,249 @@ run_glm <- function(res) {
     out
 }
 
+run_all <- function(res, thr=5) {
+    spp <- res$rof_settings$spp
+    i <- res$rof_settings$i
+    si <- BB[,i]
+    if (sum(y[si, spp]) < 1)
+        return(structure(sprintf("0 detections for %s", spp), class="try-error"))
+    xiall <- data.frame(
+        count=as.numeric(y[, spp]),
+        offset=off[, spp],
+        ecozone=ifelse(xx1$ecozone=="hudson_plain", 1, 0),
+        xx2[, cn2])
+    xi <- data.frame(
+        count=as.numeric(y[si, spp]),
+        offset=off[si, spp],
+        ecozone=ifelse(xx1$ecozone=="hudson_plain", 1, 0)[si],
+        xx2[si, cn2])
+
+    u <- rel_inf(res)
+    vars <- c("count", "offset", as.character(u$var[u$rel.inf > 0]))
+
+    itop <- max(2, max(which(u$rel.inf >= thr)))
+    utop <- as.character(u$var[seq_len(itop)])
+    xtop <- as.character(u$var[-seq_len(itop)])
+    xtop <- xtop[xtop %in% vars]
+
+    ## BRT fit
+    out <- list()
+    out$pr_brt <- suppressWarnings(predict.gbm(res, xiall, res$n.trees, type="link"))
+
+    ## GLM fit
+    ff0 <- as.formula(paste0(
+        "count ~ ",
+        paste0(vars[-(1:2)], collapse=" + "), " + ",
+        paste0(paste0("I(", utop, "^2)"), collapse=" + ")))
+    m0 <- try(glm(ff0, data=xi,
+        offset = xi$offset,
+        family = "poisson", model=FALSE, y=FALSE))
+    X <- model.matrix(formula(m0), xiall)[,names(coef(m0))]
+    out$pr_glm <- drop(X %*% coef(m0))
+
+    ## GAM fit
+    ff <- as.formula(paste0(
+        "count ~ ",
+        paste0("s(", utop, ")", collapse=" + "), " + ",
+        paste0(xtop, collapse=" + ")))
+    m1 <- try(mgcv::gam(ff,
+        data=xi,
+        offset = xi$offset,
+        family = "poisson"))
+    out$pr_gam <- as.numeric(predict(m1, newdata=xiall, type="link"))
+
+    ## GLM smoother
+    ff2 <- as.formula(paste0(
+        "out$pr_brt[si] ~ ",
+        paste0(vars[-(1:2)], collapse=" + "), " + ",
+        paste0(paste0("I(", utop, "^2)"), collapse=" + ")))
+    m2 <- lm(ff2, xi, model=FALSE)
+    out$smooth_glm <- predict(m2, newdata=xiall)
+    ## GAM smoother
+    ff3 <- as.formula(paste0(
+        "out$pr_brt[si] ~ ",
+        paste0("s(", utop, ")", collapse=" + "), " + ",
+        paste0(xtop, collapse=" + ")))
+    m3 <- mgcv::gam(ff3, data=xi)
+    out$smooth_gam <- predict(m3, newdata=xiall)
+
+    as.data.frame(out)
+}
+
+get_fff <- function(res, thr=5) {
+    u <- rel_inf(res)
+    vars <- c("count", "offset", as.character(u$var[u$rel.inf > 0]))
+
+    itop <- max(2, max(which(u$rel.inf >= thr)))
+    utop <- as.character(u$var[seq_len(itop)])
+    xtop <- as.character(u$var[-seq_len(itop)])
+    xtop <- xtop[xtop %in% vars]
+
+    paste0(
+        "count ~ ",
+        paste0(vars[-(1:2)], collapse=" + "), " + ",
+        paste0(paste0("I(", utop, "^2)"), collapse=" + "))
+}
+
+glm0 <- function(i, spp, fff) {
+    s1 <- BB[,1]
+    si <- sample(s1, replace=TRUE)
+    if (sum(y[si, spp]) < 1)
+        return(structure(sprintf("0 detections for %s", spp), class="try-error"))
+    xi <- data.frame(
+        count=as.numeric(y[si, spp]),
+        offset=off[si, spp],
+        ecozone=ifelse(xx1$ecozone=="hudson_plain", 1, 0)[si],
+        xx2[si, cn2])
+    coef(glm(as.formula(fff), data=xi,
+        offset = xi$offset,
+        family = "poisson", model=FALSE, y=FALSE))
+}
+
+glm1 <- function(i, spp, fff) {
+    si <- BB[,i]
+    if (sum(y[si, spp]) < 1)
+        return(structure(sprintf("0 detections for %s", spp), class="try-error"))
+    xi <- data.frame(
+        count=as.numeric(y[si, spp]),
+        offset=off[si, spp],
+        ecozone=ifelse(xx1$ecozone=="hudson_plain", 1, 0)[si],
+        xx2[si, cn2])
+    coef(glm(as.formula(fff), data=xi,
+        offset = xi$offset,
+        family = "poisson", model=FALSE, y=FALSE))
+}
+
+pred_glm1 <- function(cc, fff, x) {
+    ff0 <- as.formula(gsub("count ", "", fff))
+    X <- model.matrix(formula(ff0), x)[,rownames(cc)]
+    drop(X %*% cc)
+}
+
+
+## BRT run #1 --> variable screening
+spp <- "OVEN"
+load(paste0("d:/bam/2021/rof/brt2-xv/", spp, ".RData"))
+xiall <- data.frame(
+    ecozone=ifelse(xx1$ecozone=="hudson_plain", 1, 0),
+    xx2[, cn2])
+fff <- get_fff(res)
+
+z=run_all(res)
+
+#cc <- pbapply::pbsapply(1:250, glm1, spp=spp, fff=fff)
+cc <- pbapply::pbsapply(1:100, glm0, spp=spp, fff=fff)
+z$pr_glm2 <- rowMeans(pred_glm1(cc, fff, xiall))
+
+
+
+# gof
+i <- 1
+si <- BB[,i]
+nsi <- which(!(seq_len(nrow(xx1)) %in% si))
+lamIn <- exp(z[si,] + off[si,spp])
+lamOut <- exp(z[nsi,] + off[nsi,spp])
+yIn <- lamIn
+yIn[] <- as.numeric(y[si,spp])
+
+yOut <- lamOut
+yOut[] <- as.numeric(y[nsi,spp])
+
+llIn <- dpois(as.matrix(yIn), as.matrix(lamIn), log=TRUE)
+llOut <- dpois(as.matrix(yOut), as.matrix(lamOut), log=TRUE)
+
+# delta deviance
+dIn <- colSums(-2*llIn)-min(colSums(-2*llIn))
+dOut <- colSums(-2*llOut)-min(colSums(-2*llOut))
+
+# IC weights
+round(exp(-dIn/2)/sum(exp(-dIn/2)), 4)
+round(exp(-dOut/2)/sum(exp(-dOut/2)), 4)
+
+
+library(GGally)
+
+
+limitRange <- function(data, mapping, ...) {
+    Mx <- max(data)
+    ggplot(data = data, mapping = mapping, ...) +
+        geom_point(alpha=0.1, ...) +
+        geom_smooth(method = "lm", se = FALSE) +
+        scale_y_continuous(limits = c(0, Mx)) +
+        scale_x_continuous(limits = c(0, Mx)) +
+        geom_abline(slope=1, intercept=0, col="grey")
+}
+
+for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
+    load(paste0("d:/bam/2021/rof/brt2-xv/", spp, ".RData"))
+    if (inherits(res, "gbm")) {
+        z=run_all(res)
+        ez=exp(z)
+        p <- ggpairs(ez,
+            title=paste(spp, "density"),
+            progress = FALSE,
+            lower = list(continuous = limitRange)) +
+            theme_minimal()
+        ggsave(sprintf("d:/bam/2021/rof/brt2-xv-pred-mosaic/%s-glm2.png", spp), p)
+    }
+}
+
+
+## GLM based on RelImp is not so terrible: can we use bootstrap?
+
+get_fff <- function(res, thr=5) {
+    u <- rel_inf(res)
+    vars <- c("count", "offset", as.character(u$var[u$rel.inf > 0]))
+
+    itop <- max(2, max(which(u$rel.inf >= thr)))
+    utop <- as.character(u$var[seq_len(itop)])
+    xtop <- as.character(u$var[-seq_len(itop)])
+    xtop <- xtop[xtop %in% vars]
+
+    paste0(
+        "count ~ ",
+        paste0(vars[-(1:2)], collapse=" + "), " + ",
+        paste0(paste0("I(", utop, "^2)"), collapse=" + "))
+}
+
+glm1 <- function(i, spp, fff) {
+    si <- BB[,i]
+    if (sum(y[si, spp]) < 1)
+        return(structure(sprintf("0 detections for %s", spp), class="try-error"))
+    xi <- data.frame(
+        count=as.numeric(y[si, spp]),
+        offset=off[si, spp],
+        ecozone=ifelse(xx1$ecozone=="hudson_plain", 1, 0)[si],
+        xx2[si, cn2])
+    coef(glm(as.formula(fff), data=xi,
+        offset = xi$offset,
+        family = "poisson", model=FALSE, y=FALSE))
+}
+
+pred_glm1 <- function(cc, fff, xi) {
+    ff0 <- as.formula(gsub("count ", "", fff))
+    X <- model.matrix(formula(ff0), xi)[,rownames(cc)]
+    drop(X %*% cc)
+}
+
+spp <- "OVEN"
+load(paste0("d:/bam/2021/rof/brt2-xv/", spp, ".RData"))
+i <- 1
+si <- BB[,i]
+xi <- data.frame(
+    ecozone=ifelse(xx1$ecozone=="hudson_plain", 1, 0)[si],
+    xx2[si, cn2])
+fff <- get_fff(res)
+cc <- pbapply::pbsapply(1:100, glm1, spp=spp, fff=fff)
+pr_glms <- pred_glm1(cc, fff, xi)
+pr_brt <- suppressWarnings(predict.gbm(res, xi, res$n.trees, type="link"))
+
+plot(pr_brt, rowMeans(pr_glms))
+
+plot(pr_brt, pr_glms[,1], col="grey")
+points(pr_brt, rowMeans(pr_glms))
 
 i <- 1
 si <- BB[,i]
@@ -196,6 +412,18 @@ p <- ggplot(xx, aes(x=x, y=y)) +
 u <- rel_inf(res)
 plot(c(0,cinfl) ~ c(0,q),u,type="l")
 abline(h=c(80,90,95), lty=2)
+
+o1 <- run_glm(res)
+o2 <- run_gam(res)
+plot(o1$pr_brt, o1$pr_glm)
+abline(0,1,col=2)
+plot(o2$pr_brt, o2$pr_gam)
+abline(0,1,col=2)
+plot(o1$pr_glm, o2$pr_gam)
+abline(0,1,col=2)
+sd(o1$pr_brt)
+sd(o1$pr_glm)
+sd(o2$pr_gam)
 
 
 RIall <-NULL

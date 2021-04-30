@@ -47,8 +47,8 @@ poly <- st_read("~/GoogleWork/bam/RoF/boundary")
 xy <- st_as_sf(xx1, coords = c("X", "Y"), crs = 4269)
 xy <- st_transform(xy, st_crs(poly))
 
-plot(xy$geometry, pch=".", col=ifelse(xx1$ecozone=="hudson_plain", 1, 4))
-plot(poly$geometry, add=TRUE, border=2, col="#ff000022")
+plot(xy$geometry, pch=".", col=ifelse(xx1$ecozone=="hudson_plain", 2, 4))
+plot(poly$geometry, add=TRUE, border="grey", col="#00000022")
 
 di <- st_distance(poly, xy) # units m because of crs
 di <- di[1,] / 1000 # unit in km

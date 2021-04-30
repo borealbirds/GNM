@@ -111,24 +111,24 @@ r <- raster(paste0(
        "elev.tif"))
 s <- !is.na(values(r))
 
-load("d:/bam/2021/rof/BAMv6_RoFpackage.RData")
+load("d:/bam/2021/rof/BAMv6_RoFpackage_April20.RData")
 
 #spp <- "OVEN"
 #j <- 1
 CHUNKS <- 1:10
 for (j in CHUNKS) {
     gc()
-    load(paste0("d:/bam/2021/rof/predictors-layers/chunks/variables-", j, ".RData"))
+    load(paste0("d:/bam/2021/rof/predictors-layers/chunks2/variables-", j, ".RData"))
     for (spp in SPP) {
         cat(j, spp, "\n")
         flush.console()
-        load(paste0("d:/bam/2021/rof/brt-xv/", spp, ".RData"))
+        load(paste0("d:/bam/2021/rof/brt2-xv/", spp, ".RData"))
         if (inherits(res, "gbm")) {
-            if (!dir.exists(paste0("d:/bam/2021/rof/brt-xv-pred/", spp)))
-                dir.create(paste0("d:/bam/2021/rof/brt-xv-pred/", spp))
+            if (!dir.exists(paste0("d:/bam/2021/rof/brt2-xv-pred/", spp)))
+                dir.create(paste0("d:/bam/2021/rof/brt2-xv-pred/", spp))
             p <- predict.gbm(res, M, res$n.trees, type="response")
         save(p,
-            file=paste0("d:/bam/2021/rof/brt-xv-pred/", spp, "/", spp, "-chunk-", j, ".RData"))
+            file=paste0("d:/bam/2021/rof/brt2-xv-pred/", spp, "/", spp, "-chunk-", j, ".RData"))
         }
     }
 }
