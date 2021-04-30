@@ -136,17 +136,19 @@ for (j in CHUNKS) {
 
 ## putting together the pieces
 library(raster)
-SPP <- list.dirs("d:/bam/2021/rof/brt-xv-pred", full.names=FALSE)[-1]
-load("d:/bam/2021/rof/predictors-layers/chunks/chunks.RData")
+SPP <- list.dirs("d:/bam/2021/rof/brt2-xv-pred", full.names=FALSE)[-1]
+load("d:/bam/2021/rof/predictors-layers/chunks2/chunks.RData")
 r <- raster(paste0(
         "d:/bam/2021/rof/predictors-layers/Clip to BCR 7 and 8 LCC/",
        "elev.tif"))
 s <- !is.na(values(r))
 
 for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
     spppred <- list()
     for (j in 1:10) {
-        f <- paste0("d:/bam/2021/rof/brt-xv-pred/",
+        f <- paste0("d:/bam/2021/rof/brt2-xv-pred/",
             spp, "/", spp, "-chunk-", j, ".RData")
         load(f)
         spppred[[j]] <- p
@@ -155,7 +157,7 @@ for (spp in SPP) {
     ri <- r
     values(ri)[s] <- v[s]
     writeRaster(ri,
-        paste0("d:/bam/2021/rof/brt-xv-pred-mosaic/", spp, ".tif"),
+        paste0("d:/bam/2021/rof/brt2-xv-pred-mosaic/", spp, ".tif"),
         overwrite=TRUE)
 }
 
@@ -166,7 +168,7 @@ library(rgeos)
 library(raster)
 
 # RoF boundary
-r <- raster(paste0("d:/bam/2021/rof/brt-xv-pred-mosaic/OVEN.tif"))
+r <- raster(paste0("d:/bam/2021/rof/brt2-xv-pred-mosaic/ALFL.tif"))
 pl <- rgdal::readOGR("~/GoogleWork/bam/RoF/boundary")
 pl <- spTransform(pl, proj4string(r))
 #u <- mask(r, pl)
@@ -175,16 +177,17 @@ for (spp in SPP) {
     cat(spp, "\n")
     flush.console()
 
-    ri <- raster(paste0("d:/bam/2021/rof/brt-xv-pred-mosaic/", spp, ".tif"))
+    ri <- raster(paste0("d:/bam/2021/rof/brt2-xv-pred-mosaic/", spp, ".tif"))
     q <- quantile(ri, 0.999)
     values(ri)[!is.na(values(ri)) & values(ri) > q] <- q
     u <- mask(ri, pl)
     N <- round(2 * sum(values(u), na.rm=TRUE) * 2.5^2 / 10^6, 3)
 
-    png(paste0("d:/bam/2021/rof/brt-xv-pred-mosaic/", spp, ".png"), width=500, height=500)
+    png(paste0("d:/bam/2021/rof/brt2-xv-pred-mosaic/", spp, ".png"), width=500, height=500)
     op <- par(mfrow=c(1,1), mar=c(1,1,2,6))
     plot(ri, axes=FALSE, box=FALSE, col=hcl.colors(100, "Lajolla"),
-        main=paste(spp, "Mean Density (males/ha)\nPopulation size =", N, "M inds."))
+#        main=paste(spp, "Mean Density (males/ha)\nPopulation size =", N, "M inds."))
+        main=paste(spp, "Mean Density (males/ha)"))
     plot(pl, add=TRUE, border=4)
     par(op)
     dev.off()
@@ -213,7 +216,7 @@ summary(rs)
 range(LC, na.rm=TRUE)
 LC[is.na(LC)] <- 0
 wm <- find_max(LC)
-r <- raster(paste0("d:/bam/2021/rof/brt-xv-pred-mosaic/OVEN.tif"))
+r <- raster(paste0("d:/bam/2021/rof/brt2-xv-pred-mosaic/OVEN.tif"))
 wm$index[is.na(values(r))] <- NA
 
 rlcDom <- r
@@ -228,7 +231,7 @@ for (spp in SPP) {
     cat(spp, "\n")
     flush.console()
 
-    ri <- raster(paste0("d:/bam/2021/rof/brt-xv-pred-mosaic/", spp, ".tif"))
+    ri <- raster(paste0("d:/bam/2021/rof/brt2-xv-pred-mosaic/", spp, ".tif"))
     q <- quantile(ri, 0.999)
     ri <- mask(ri, pl)
     values(ri)[!is.na(values(ri)) & values(ri) > q] <- q
@@ -239,4 +242,4 @@ for (spp in SPP) {
     DD <- rbind(DD, ag)
 }
 
-write.csv(DD, row.names=FALSE, file="d:/bam/2021/rof/SppDensityByOLCC.csv")
+write.csv(DD, row.names=FALSE, file="d:/bam/2021/rof/SppDensityByOLCC_v2.csv")
