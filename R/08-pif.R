@@ -116,11 +116,14 @@ save(N, file="d:/bam/BAM_data_v2019/gnm/data/N-by-bcr-prov.RData")
 write.csv(N, file="~/GoogleWork/bam/PIF-AB/N-by-bcr-prov-2020-03-16.csv")
 
 ## compare BCR/prov results: BAM v4 vs PIF v3
+
 library(mefa4)
+library(lhreg)
 N <- read.csv("~/GoogleWork/bam/PIF-AB/N-by-bcr-prov-2020-03-16.csv")
 Tab1 <- read.csv("~/repos/api/docs/v4/BAMv4-abundances-2020-02-20.csv")
 Tab2 <- read.csv("~/repos/api/docs/v4/BAMv4-densities-2020-02-20.csv")
 pif <- read.csv("~/GoogleWork/bam/PIF-AB/popBCR-CAN_v3_27-Feb-2019.csv")
+lhr <- lhreg::lhreg_data
 
 compare_sets(Tab1$english, pif$English.Name)
 pif$id1 <- as.character(Tab1$id[match(pif$English.Name, Tab1$english)])
@@ -137,8 +140,17 @@ pif$N <- as.numeric(gsub(",", "", as.character(pif$Population.Estimate..unrounde
 summary(pif$N)
 pif$N <- pif$N / pif$Pair.Adjust.Category
 pif$N <- pif$N / 10^6
+#Lower.95..bound
+#Upper.95..bound
 
-x <- data.frame(species=pif$id, bcr=pif$BCR, prov=pif$Province...State...Territory, Npif=pif$N)
+x <- data.frame(
+    species=pif$id,
+    MDD=pif$Detection.Distance.Category..m.,
+    Tadj=pif$Time.Adjust.Mean,
+    PairAdj=pif$Pair.Adjust.Category,
+    bcr=pif$BCR,
+    prov=pif$Province...State...Territory,
+    Npif=pif$N)
 x <- droplevels(x[!is.na(x$Npif),])
 x$bcr <- as.integer(as.character(x$bcr))
 rownames(x) <- paste(x$species, x$bcr, x$prov, sep="-")
@@ -192,3 +204,16 @@ par(op)
 
 summary(x$Npix/x$Npif)
 exp(summary(x$logNpix-x$logNpif))
+
+## species info
+
+compare_sets(x$species, lhr$spp)
+x <- droplevels(x[x$species %in% lhr$spp,])
+x <- data.frame(x, lhr[match(x$species, lhr$spp),])
+x$p3min <- 1-exp(-3*exp(x$logphi))
+x <- data.frame(uid=rownames(x), x)
+
+write.csv(x, row.names=FALSE,
+    file="~/GoogleWork/bam/PIF-CAN/pifpix-can-estimates-2021-05-05.csv")
+
+

@@ -224,8 +224,8 @@ f <- function(dmean, u, pair) {
     Akm <- sum_by(A, v)
     N <- groupSums(dmean[rownames(dd),] * A * 100 * pair, 1, v)[rownames(Akm),,drop=FALSE]
     D <- groupSums(dmean[rownames(dd),] * A/sum(A), 1, v)[rownames(Akm),,drop=FALSE]
-    Nq <- t(apply(N, 1, quantile, c(0.5, 0.05, 0.95)))
-    Dq <- t(apply(D, 1, quantile, c(0.5, 0.05, 0.95)))
+    Nq <- t(apply(N, 1, quantile, Q))
+    Dq <- t(apply(D, 1, quantile, Q))
     data.frame(
         region=rownames(Akm),
         Akm2=Akm[,"x"],
@@ -302,9 +302,9 @@ h <- function(spp) {
     d2$id <- as.character(d2$id)
 
     dmean1 <- dmean1[d1$id,]
-    q1 <- t(apply(dmean1, 1, quantile, c(0.5, 0.05, 0.95)))
+    q1 <- t(apply(dmean1, 1, quantile, Q))
     dmean2 <- dmean2[d2$id,]
-    q2 <- t(apply(dmean2, 1, quantile, c(0.5, 0.05, 0.95)))
+    q2 <- t(apply(dmean2, 1, quantile, Q))
 
     df1 <- data.frame(
         SpeciesID=tab[spp, "id"],
@@ -337,6 +337,8 @@ h <- function(spp) {
     rbind(df1, df2)
 }
 
+CI <- 95
+Q <- c(0.5, (1-(CI/100))/2, 1-(1-(CI/100))/2)
 res <- NULL
 res1 <- NULL
 for (spp in tab$id) {
@@ -358,8 +360,10 @@ for (spp in tab$id) {
     res1 <- rbind(res1, h(spp))
 }
 
-write.csv(res, row.names=FALSE, file="d:/bam/2021/gnm/BAM-GNM-Summaries-2021-03-01.csv")
-write.csv(res1, row.names=FALSE, file="d:/bam/2021/gnm/BAM-GNM-Densities-2021-03-01.csv")
+write.csv(res, row.names=FALSE,
+    file=paste0("d:/bam/2021/gnm/BAM-GNM-Summaries-2021-03-01-CI", CI, ".csv"))
+write.csv(res1, row.names=FALSE,
+    file=paste0("d:/bam/2021/gnm/BAM-GNM-Densities-2021-03-01-CI", CI, ".csv"))
 
 LCCs <- c(
     "Conifer"=1,
@@ -408,3 +412,180 @@ BCRs0x <- c(
     "Boreal Hardwood Transition"=12,
     "Lower Great Lakes/St. Lawrence Plain"=13,
     "Atlantic Northern Forest"=14)
+
+
+## lcc breakdown by BCR/PROV
+
+library(raster)
+library(mefa4)
+library(jsonlite)
+
+r <- raster("d:/bam/2021/gnm/regions/nalc.tif")
+v <- values(r)
+load("d:/bam/2021/gnm/regions/BCRPROV.RData") # xy, xy1
+xy1$geometry <- NULL
+levels(xy1$PROV) <- c("Alberta", "British Columbia", "Manitoba",
+    "New Brunswick", "Newfoundland and Labrador",
+    "Northwest Territories", "Nova Scotia",
+    "Nunavut", "Ontario", "Prince Edward Island",
+    "Quebec", "Saskatchewan", "water", "Yukon Territory")
+
+xy1$nalc <- v[xy1$id]
+xy1$BCRPROV <- as.factor(paste(xy1$BCR, xy1$PROV))
+str(xy1)
+xy1 <- xy1[!is.na(xy1$nalc) & xy1$PROV != "water",]
+xy1$NALCBCRPROV <- as.factor(paste(xy1$nalc, xy1$BCR, xy1$PROV))
+xy1$NALCBCR <- as.factor(paste(xy1$nalc, xy1$BCR))
+xy1$NALCPROV <- as.factor(paste(xy1$nalc, xy1$PROV))
+
+
+
+#spp <- "OVEN"
+SPP <- fromJSON("https://borealbirds.github.io/api/v4/species")$id
+
+## just the mean
+
+vvv <- NULL
+for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
+    ri <- raster(file.path("d:/bam/BAM_data_v2019/gnm/artifacts",
+        spp, paste0("pred-", spp, "-CAN-Mean.tif")))
+    vi <- values(ri)[xy1$id]
+    vi[is.na(vi)] <- 0
+    vv <- sum_by(vi, xy1$NALCBCRPROV)
+    vvv <- rbind(vvv,
+        data.frame(spp=spp, nalcreg=rownames(vv), sum=vv[,1], ncell=vv[,2]))
+}
+
+write.csv(vvv, row.names=FALSE,
+    file=paste0("d:/bam/2021/gnm/BAM-GNM-NALCbyBCRJURSmean-2021-05-05.csv"))
+
+
+## CIs
+
+vvv1 <- NULL
+vvv2 <- NULL
+vvv3 <- NULL
+vvv4 <- NULL
+for (spp in SPP) {
+    mat1 <- NULL
+    mat2 <- NULL
+    mat3 <- NULL
+    mat4 <- NULL
+    for (j in 1:32) {
+        cat(spp, j, "\n")
+        flush.console()
+        ri <- raster(file.path("d:/bam/BAM_data_v2019/gnm/artifacts",
+            spp, paste0("pred-", spp, "-CAN-boot-", j, ".tif")))
+        vi <- values(ri)[xy1$id]
+        vi[is.na(vi)] <- 0
+
+        vv1 <- sum_by(vi, xy1$nalc)
+        mat1 <- cbind(mat1, vv1[,1]/vv1[,2])
+
+        vv2 <- sum_by(vi, xy1$NALCBCR)
+        mat2 <- cbind(mat2, vv2[,1]/vv2[,2])
+
+        vv3 <- sum_by(vi, xy1$NALCPROV)
+        mat3 <- cbind(mat3, vv3[,1]/vv3[,2])
+
+        vv4 <- sum_by(vi, xy1$NALCBCRPROV)
+        mat4 <- cbind(mat4, vv4[,1]/vv4[,2])
+    }
+    Q <- c(0.5, 0.025, 0.975)
+    qq1 <- t(apply(mat1, 1, quantile, Q))
+    qq2 <- t(apply(mat2, 1, quantile, Q))
+    qq3 <- t(apply(mat3, 1, quantile, Q))
+    qq4 <- t(apply(mat4, 1, quantile, Q))
+    vvv1 <- rbind(vvv1,
+        data.frame(spp=spp,
+            nalc=rownames(qq1),
+            nalcbcr=NA,
+            nalcjurs=NA,
+            nalcbcrjurs=NA,
+            ncell=vv1[,2],
+            Mean=rowMeans(mat1),
+            Median=qq1[,1],
+            Lower=qq1[,2],
+            Upper=qq1[,3]))
+    vvv2 <- rbind(vvv2,
+        data.frame(spp=spp,
+            nalc=NA,
+            nalcbcr=rownames(qq2),
+            nalcjurs=NA,
+            nalcbcrjurs=NA,
+            ncell=vv2[,2],
+            Mean=rowMeans(mat2),
+            Median=qq2[,1],
+            Lower=qq2[,2],
+            Upper=qq2[,3]))
+    vvv3 <- rbind(vvv3,
+        data.frame(spp=spp,
+            nalc=NA,
+            nalcbcr=NA,
+            nalcjurs=rownames(qq3),
+            nalcbcrjurs=NA,
+            ncell=vv3[,2],
+            Mean=rowMeans(mat3),
+            Median=qq3[,1],
+            Lower=qq3[,2],
+            Upper=qq3[,3]))
+    vvv4 <- rbind(vvv4,
+        data.frame(spp=spp,
+            nalc=NA,
+            nalcbcr=NA,
+            nalcjurs=NA,
+            nalcbcrjurs=rownames(qq4),
+            ncell=vv4[,2],
+            Mean=rowMeans(mat4),
+            Median=qq4[,1],
+            Lower=qq4[,2],
+            Upper=qq4[,3]))
+}
+vvv <- rbind(vvv1, vvv2, vvv3, vvv4)
+write.csv(vvv, row.names=FALSE,
+    file=paste0("d:/bam/2021/gnm/BAM-GNM-NALCbyBCRJURSwithCI95-2021-05-05.csv"))
+
+vvv <- read.csv("d:/bam/2021/gnm/BAM-GNM-NALCbyBCRJURSwithCI95-2021-05-05-old.csv")
+vvv0=vvv
+
+tmp <- strsplit(as.character(vvv$nalcbcr), " ")
+tmp <- t(sapply(tmp, function(z) {
+    if (length(z)==1)
+        c(NA_character_, NA_character_) else c(z[1], paste(z[-1], collapse=" "))
+}))
+str(tmp)
+tmp_bcr <- tmp
+
+tmp <- strsplit(as.character(vvv$nalcjurs), " ")
+tmp <- t(sapply(tmp, function(z) {
+    if (length(z)==1)
+        c(NA_character_, NA_character_) else c(z[1], paste(z[-1], collapse=" "))
+}))
+str(tmp)
+tmp_jurs <- tmp
+
+tmp <- strsplit(as.character(vvv$nalcbcrjurs), " ")
+tmp <- t(sapply(tmp, function(z) {
+    if (length(z)==1)
+        c(NA_character_, NA_character_, NA_character_) else c(z[1], z[2], paste(z[-(1:2)], collapse=" "))
+}))
+str(tmp)
+tmp_bcrjurs <- tmp
+
+vvv$nalc[is.na(vvv$nalc)] <- as.numeric(tmp_bcr[,1])[is.na(vvv$nalc)]
+vvv$nalc[is.na(vvv$nalc)] <- as.numeric(tmp_jurs[,1])[is.na(vvv$nalc)]
+vvv$nalc[is.na(vvv$nalc)] <- as.numeric(tmp_bcrjurs[,1])[is.na(vvv$nalc)]
+table(is.na(vvv$nalc))
+
+vvv$bcr <- tmp_bcr[,2]
+vvv$bcr[is.na(vvv$bcr)] <- tmp_bcrjurs[is.na(vvv$bcr),2]
+
+vvv$jurs <- tmp_jurs[,2]
+vvv$jurs[is.na(vvv$jurs)] <- tmp_bcrjurs[is.na(vvv$jurs),3]
+
+vvv$bcr <- as.numeric(vvv$bcr)
+
+write.csv(vvv, row.names=FALSE,
+    file=paste0("d:/bam/2021/gnm/BAM-GNM-NALCbyBCRJURSwithCI95-2021-05-05.csv"))
