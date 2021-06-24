@@ -12,10 +12,39 @@ load("~/repos/GNM/regions/wbi/subsets4.RData")
 SU <- list("WBAB"=60,
     "WBBC"=c(4,60),
     "WBYT"=4,
-    "WBMT"=c(60,70,80),
+    "WBMB"=c(60,70,80),
     "WBSK"=c(60,80),
     "WBNT"=c(61, 70))
+## polygon area in M kmsq
+AA <- c(
+    WBAB = 440142,
+    WBBC = 283930,
+    WBYT = 425409,
+    WBMB = 542250,
+    WBSK = 394355,
+    WBNT = 993122
+)
+PP <- AA / sum(AA)
 
+get_data_all <- function(spp, replace=FALSE, nmax=10^4) {
+    nn <- round(PP * nmax)
+    cn0 <- NULL
+    for (i in names(SU)) {
+        regs <- paste0(spp, "-", SU[[i]])
+        cn <- L[regs]
+        cn <- sort(unique(unlist(cn)))
+        cn0 <- c(cn0, cn)
+    }
+    cn0 <- sort(unique(cn0))
+    DAT <- NULL
+    for (i in names(SU)) {
+        d <- get_data_by_reg(spp, i, cn=cn0, replace=replace,
+            nmax=nmax)#nmax=nn[i])
+        d$reg <- factor(i, levels(dd$reg))
+        DAT <- rbind(DAT, d)
+    }
+    DAT
+}
 
 get_data_by_reg <- function(spp, reg, cn=NULL, replace=FALSE, nmax=10^4) {
     ss <- dd$reg == reg
@@ -24,8 +53,9 @@ get_data_by_reg <- function(spp, reg, cn=NULL, replace=FALSE, nmax=10^4) {
         cn <- L[regs]
         cn <- sort(unique(unlist(cn)))
     }
-    cn <- cn[cn != "YEAR"]
     cn <- unique(c("nalc", cn))
+    cn <- cn[cn != "YEAR"]
+    cn <- cn[cn != "ARU"]
     DAT <- data.frame(
         count=as.numeric(Y[ss, spp]),
         offset=O[ss, spp],
@@ -56,9 +86,15 @@ simple_auc <- function(ROC) {
     sum(dx * ROC$TPR[-1]) / sum(dx)
 }
 
-fit_fun <- function(i, spp, reg) {
+fit_fun <- function(i, spp, reg=NULL) {
 
-    d <- droplevels(get_data_by_reg(spp, reg, replace=i>1))
+    d <- if (is.null(reg)) {
+        get_data_all(spp, replace=i>1)
+    } else {
+        get_data_by_reg(spp, reg, replace=i>1)
+    }
+    d <- droplevels(d)
+    d$reg <- NULL
     if (nrow(d) < 1)
         return(structure("no data", class="try-error"))
     if (sum(d$count) < 1)
@@ -97,7 +133,9 @@ fit_fun <- function(i, spp, reg) {
 
     ## add here glm based smooth
 
-    out <- list(i=i, spp=spp, reg=reg, vars=colnames(d)[-(1:2)],
+    out <- list(i=i, spp=spp,
+        reg=if (is.null(reg)) "ALL" else reg,
+        vars=colnames(d)[-(1:2)],
         pk=rownames(v),
         #obs=v,
         AUC=AUC,
@@ -140,9 +178,28 @@ for (spp in SPP) {
     qsave(RES,file=fn)
 }
 
+## use all data
+i <- 1
+for (spp in SPP) {
+    gc()
+    cat(i, spp, "\n")
+    flush.console()
+    tmp <- try(fit_fun(i, spp, reg=NULL))
+    if (inherits(tmp, "try-error"))
+        tmp <- structure(as.character(tmp), class="try-error")
+    RES <- tmp
+    dir.create(paste0("d:/bam/2021/wbi/out/", spp))
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALLRES-", i, ".qRData")
+    qsavem(RES, file=fn)
+}
+
 # 100 run for 1 spp
 spp <- "OVEN"
-dir.create(paste0("d:/bam/2021/wbi/out/", spp))
+#spp <- "BLPW"
+#spp <- "CAWA"
+#spp <- "OSFL"
+
+#dir.create(paste0("d:/bam/2021/wbi/out/", spp))
 for (i in 2:100) {
     RES <- list()
     for (reg in names(SU)) {
@@ -155,5 +212,50 @@ for (i in 2:100) {
     }
     fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
     qsave(RES,file=fn)
+}
+
+spp <- "OVEN"
+for (i in 2:100) {
+    gc()
+    cat(i, spp, "\n")
+    flush.console()
+    tmp <- try(fit_fun(i, spp, reg=NULL))
+    if (inherits(tmp, "try-error"))
+        tmp <- structure(as.character(tmp), class="try-error")
+    RES <- tmp
+    dir.create(paste0("d:/bam/2021/wbi/out/", spp))
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALLRES-", i, ".qRData")
+    qsavem(RES, file=fn)
+}
+
+## some boot
+B <- 32
+Bv <- 1:8
+Bv <- 9:16
+Bv <- 17:24
+Bv <- 25:32
+SPPx <- SPP#[!(SPP %in% c("OVEN", "CAWA", "BLPW", "OSFL"))]
+for (i in Bv) {
+    for (spp in SPPx) {
+        gc()
+        if (!dir.exists(paste0("d:/bam/2021/wbi/out/", spp)))
+            dir.create(paste0("d:/bam/2021/wbi/out/", spp))
+        fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
+        #if (!file.exists(fn)) {
+        if (TRUE) {
+            RES <- list()
+            for (reg in names(SU)) {
+                cat(i, spp, reg, "\n")
+                flush.console()
+                tmp <- try(fit_fun(i, spp, reg))
+                if (inherits(tmp, "try-error"))
+                    tmp <- structure(as.character(tmp), class="try-error")
+                RES[[reg]] <- tmp
+            }
+            qsave(RES,file=fn)
+        } else {
+            cat(i, spp, "- skipping\n")
+        }
+    }
 }
 
