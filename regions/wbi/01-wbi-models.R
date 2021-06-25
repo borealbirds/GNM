@@ -5,7 +5,7 @@ library(qs)
 library(fastglm)
 library(eflm)
 
-qs::qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-11.qRData")
+qs::qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-25.qRData")
 
 load("~/repos/GNM/regions/wbi/subsets4.RData")
 
@@ -25,6 +25,10 @@ AA <- c(
     WBNT = 993122
 )
 PP <- AA / sum(AA)
+
+tmp <- table(dd$reg)/sum(table(dd$reg))
+dx <- data.frame(Area=PP, Pts=as.numeric(tmp[names(PP)]))
+dx$Ratio <- dx$Pts / dx$Area
 
 get_data_all <- function(spp, replace=FALSE, nmax=10^4) {
     nn <- round(PP * nmax)
@@ -160,27 +164,13 @@ dim(get_data_by_reg("OVEN", "WBMB"))
 dim(get_data_by_reg("OVEN", "WBNT"))
 dim(get_data_by_reg("OVEN", "WBSK"))
 dim(get_data_by_reg("OVEN", "WBYT"))
+dim(get_data_all("OVEN"))
 
 ## one run for each spp
-i <- 1
-for (spp in SPP) {
-    RES <- list()
-    for (reg in names(SU)) {
-        cat(i, spp, reg, "\n")
-        flush.console()
-        tmp <- try(fit_fun(i, spp, reg))
-        if (inherits(tmp, "try-error"))
-            tmp <- structure(as.character(tmp), class="try-error")
-        RES[[reg]] <- tmp
-    }
-    dir.create(paste0("d:/bam/2021/wbi/out/", spp))
-    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
-    qsave(RES,file=fn)
-}
-
 ## use all data
 i <- 1
-for (spp in SPP) {
+SPPx <- SPP[1:30]
+for (spp in SPPx) {
     gc()
     cat(i, spp, "\n")
     flush.console()
@@ -189,32 +179,12 @@ for (spp in SPP) {
         tmp <- structure(as.character(tmp), class="try-error")
     RES <- tmp
     dir.create(paste0("d:/bam/2021/wbi/out/", spp))
-    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALLRES-", i, ".qRData")
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
     qsavem(RES, file=fn)
 }
 
 # 100 run for 1 spp
 spp <- "OVEN"
-#spp <- "BLPW"
-#spp <- "CAWA"
-#spp <- "OSFL"
-
-#dir.create(paste0("d:/bam/2021/wbi/out/", spp))
-for (i in 2:100) {
-    RES <- list()
-    for (reg in names(SU)) {
-        cat(i, spp, reg, "\n")
-        flush.console()
-        tmp <- try(fit_fun(i, spp, reg))
-        if (inherits(tmp, "try-error"))
-            tmp <- structure(as.character(tmp), class="try-error")
-        RES[[reg]] <- tmp
-    }
-    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
-    qsave(RES,file=fn)
-}
-
-spp <- "OVEN"
 for (i in 2:100) {
     gc()
     cat(i, spp, "\n")
@@ -224,17 +194,17 @@ for (i in 2:100) {
         tmp <- structure(as.character(tmp), class="try-error")
     RES <- tmp
     dir.create(paste0("d:/bam/2021/wbi/out/", spp))
-    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALLRES-", i, ".qRData")
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
     qsavem(RES, file=fn)
 }
 
 ## some boot
-B <- 32
-Bv <- 1:8
-Bv <- 9:16
-Bv <- 17:24
-Bv <- 25:32
-SPPx <- SPP#[!(SPP %in% c("OVEN", "CAWA", "BLPW", "OSFL"))]
+SPPx <- SPP[1:30]
+SPPx <- SPP[31:60]
+SPPx <- SPP[61:90]
+SPPx <- SPP[91:117]
+
+B <- 2:10
 for (i in Bv) {
     for (spp in SPPx) {
         gc()
@@ -252,7 +222,7 @@ for (i in Bv) {
                     tmp <- structure(as.character(tmp), class="try-error")
                 RES[[reg]] <- tmp
             }
-            qsave(RES,file=fn)
+            qsavem(RES,file=fn)
         } else {
             cat(i, spp, "- skipping\n")
         }
