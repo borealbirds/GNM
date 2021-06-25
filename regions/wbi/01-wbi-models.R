@@ -165,6 +165,7 @@ dim(get_data_by_reg("OVEN", "WBNT"))
 dim(get_data_by_reg("OVEN", "WBSK"))
 dim(get_data_by_reg("OVEN", "WBYT"))
 dim(get_data_all("OVEN"))
+dim(get_data_all("OVEN", replace=TRUE))
 
 ## one run for each spp
 ## use all data
@@ -204,28 +205,21 @@ SPPx <- SPP[31:60]
 SPPx <- SPP[61:90]
 SPPx <- SPP[91:117]
 
-B <- 2:10
+Bv <- 2:10
 for (i in Bv) {
     for (spp in SPPx) {
         gc()
+        cat(i, spp, "\n")
+        flush.console()
+        fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
+        tmp <- try(fit_fun(i, spp, reg=NULL))
+        if (inherits(tmp, "try-error"))
+            tmp <- structure(as.character(tmp), class="try-error")
+        RES <- tmp
         if (!dir.exists(paste0("d:/bam/2021/wbi/out/", spp)))
             dir.create(paste0("d:/bam/2021/wbi/out/", spp))
         fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
-        #if (!file.exists(fn)) {
-        if (TRUE) {
-            RES <- list()
-            for (reg in names(SU)) {
-                cat(i, spp, reg, "\n")
-                flush.console()
-                tmp <- try(fit_fun(i, spp, reg))
-                if (inherits(tmp, "try-error"))
-                    tmp <- structure(as.character(tmp), class="try-error")
-                RES[[reg]] <- tmp
-            }
-            qsavem(RES,file=fn)
-        } else {
-            cat(i, spp, "- skipping\n")
-        }
+        qsavem(RES, file=fn)
     }
 }
 
