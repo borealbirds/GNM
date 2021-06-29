@@ -5,9 +5,12 @@ library(qs)
 library(fastglm)
 library(eflm)
 
+source("~/repos/GNM/regions/wbi/functions.R")
+
 qs::qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-25.qRData")
 
-load("~/repos/GNM/regions/wbi/subsets4.RData")
+#load("~/repos/GNM/regions/wbi/subsets4.RData")
+load("d:/bam/2021/wbi/daic.RData")
 
 SU <- list("WBAB"=60,
     "WBBC"=c(4,60),
@@ -30,132 +33,121 @@ tmp <- table(dd$reg)/sum(table(dd$reg))
 dx <- data.frame(Area=PP, Pts=as.numeric(tmp[names(PP)]))
 dx$Ratio <- dx$Pts / dx$Area
 
-get_data_all <- function(spp, replace=FALSE, nmax=10^4) {
-    nn <- round(PP * nmax)
-    cn0 <- NULL
-    for (i in names(SU)) {
-        regs <- paste0(spp, "-", SU[[i]])
-        cn <- L[regs]
-        cn <- sort(unique(unlist(cn)))
-        cn0 <- c(cn0, cn)
+
+
+if (FALSE) {
+## this is the part where we screen the important predictors
+
+dim(ddvar)
+M <- as.matrix(ddvar[,colnames(ddvar) != "nalc"])
+CM <- cor(M)
+SD <- apply(M, 2, sd)
+MN <- colMeans(M)
+CoV <- SD/MN
+M2 <- M[,SD>0.001]
+Uv <- apply(M2, 2, function(z) {
+    q <- quantile(z, c(0.01, 0.99))
+    z <- z[z>=q[1] & z<=q[2]]
+    length(unique(z))
+})
+table(Uv)
+M3 <- M2[,Uv > 99]
+
+get_cn <- function(z, rmax=0.9) {
+    SD <- apply(z, 2, sd)
+    COR <- cor(z[,SD > 0])
+    cr <- mefa:::stack.dist(as.dist(COR), dim.names = TRUE)
+    cr <- cr[order(abs(cr$dist), decreasing = TRUE),]
+    cr[,1] <- as.character(cr[,1])
+    cr[,2] <- as.character(cr[,2])
+    cr$Landsc1 <- startsWith(cr[,1], "Landsc750_")
+    cr$Landsc2 <- startsWith(cr[,2], "Landsc750_")
+    cr1 <- cr[cr$Landsc1 | cr$Landsc2,]
+    cr2 <- cr[!(cr$Landsc1 | cr$Landsc2),]
+    while(any(abs(cr1$dist) > rmax)) {
+        i <- if (cr1$Landsc1[1])
+            cr1[1,1] else cr1[1,2]
+        j <- cr1[,1] == i | cr1[,2] == i
+        cr1 <- cr1[!j,]
     }
-    cn0 <- sort(unique(cn0))
-    DAT <- NULL
-    for (i in names(SU)) {
-        d <- get_data_by_reg(spp, i, cn=cn0, replace=replace,
-            nmax=nmax)#nmax=nn[i])
-        d$reg <- factor(i, levels(dd$reg))
-        DAT <- rbind(DAT, d)
+    cr3 <- rbind(cr1, cr2)
+    cr3 <- cr3[order(abs(cr3$dist), decreasing = TRUE),]
+    while(any(abs(cr3$dist) > rmax)) {
+        i <- if (cr3$Landsc1[1])
+            cr3[1,1] else cr3[1,2]
+        j <- cr3[,1] == i | cr3[,2] == i
+        cr3 <- cr3[!j,]
     }
-    DAT
+    union(as.character(cr3[,1]), as.character(cr3[,2]))
 }
 
-get_data_by_reg <- function(spp, reg, cn=NULL, replace=FALSE, nmax=10^4) {
-    ss <- dd$reg == reg
-    if (is.null(cn)) {
-        regs <- paste0(spp, "-", SU[[reg]])
-        cn <- L[regs]
-        cn <- sort(unique(unlist(cn)))
+CN <- sort(get_cn(M3))
+
+CN <- c("AHM", "CMD", "dev750", "EMT", "LandCover_Veg_v1", "LandCover_Veg_v1.1",
+    "LandCover_VegNonTreed_v1", "LandCover_VegNonTreed_v1.1", "LandCover_VegTreed_v1.1",
+    "Landsc750_Abie_Bal_v1", "Landsc750_Abie_Las_v1", "Landsc750_Abie_Spp_v1",
+    "Landsc750_Acer_Neg_v1", "Landsc750_Acer_Rub_v1", "Landsc750_Betu_Pap_v1",
+    "Landsc750_Betu_Spp_v1", "Landsc750_Frax_Ame_v1", "Landsc750_Frax_Nig_v1",
+    "Landsc750_Frax_Pen_v1", "Landsc750_Genc_Spp_v1", "Landsc750_Lari_Lar_v1",
+    "Landsc750_Lari_Lya_v1", "Landsc750_Needleleaf_Spp_v1", "Landsc750_Pice_Eng_v1",
+    "Landsc750_Pice_Gla_v1", "Landsc750_Pice_Mar_v1", "Landsc750_Pice_Spp_v1",
+    "Landsc750_Pinu_Ban_v1", "Landsc750_Pinu_Res_v1", "Landsc750_Pinu_Spp_v1",
+    "Landsc750_Pinu_Str_v1", "Landsc750_Popu_Bal_v1", "Landsc750_Popu_Spp_v1",
+    "Landsc750_Popu_Tri_v1", "Landsc750_Prun_Pen_v1", "Landsc750_Pseu_Men_v1",
+    "Landsc750_Quer_Mac_v1", "Landsc750_Sali_Spp_v1", "Landsc750_Stand_Age_v1",
+    "Landsc750_Thuj_Occ_v1", "Landsc750_Ulmu_Ame_v1", "led750", "MAP",
+    "PPT_sm", "SHM", "slope", "Species_Abie_Bal_v1", "Species_Abie_Las_v1",
+    "Species_Acer_Neg_v1", "Species_Betu_Pap_v1", "Species_Betu_Spp_v1",
+    "Species_Lari_Lar_v1", "Species_Pice_Gla_v1", "Species_Pice_Mar_v1",
+    "Species_Pice_Spp_v1", "Species_Pinu_Ban_v1", "Species_Pinu_Con_v1",
+    "Species_Pinu_Spp_v1", "Species_Popu_Bal_v1", "Species_Popu_Spp_v1",
+    "Species_Quer_Mac_v1", "Species_Sali_Spp_v1", "SpeciesGroups_Broadleaf_Spp_v1",
+    "SpeciesGroups_Needleleaf_Spp_v1", "Structure_Stand_Age_v1",
+    "TD", "TPI")
+
+#spp <- "ALFL"
+#DAIC <- list()
+for (spp in SPP) {
+    d <- get_data_all(spp, replace=FALSE, cn0=CN)
+
+    m0 <- mgcv::gam(count ~ 1, data=d, family=poisson, offset=d$offset)
+    aic <- c(Null=AIC(m0))
+
+#    for (i in seq_len(length(CN))) {
+    for (i in 47:67) {
+        V <-  CN[i]
+        cat(spp, i, V, "\n")
+        flush.console()
+        fm <- as.formula(sprintf("count ~ s(%s)", V))
+        m <- try(mgcv::gam(formula=fm, data=d, family=poisson, offset=d$offset))
+        newaic <- if (inherits(m, "try-error"))
+            Inf else AIC(m)
+        #plot(m)
+        aic <- c(aic, newaic)
+        names(aic)[i+1] <- V
     }
-    cn <- unique(c("nalc", cn))
-    cn <- cn[cn != "YEAR"]
-    cn <- cn[cn != "ARU"]
-    DAT <- data.frame(
-        count=as.numeric(Y[ss, spp]),
-        offset=O[ss, spp],
-        cyid=dd$cyid[ss],
-        YEAR=dd$YEAR[ss],
-        ARU=dd$ARU[ss], # ARU added here, but not as layer
-        ddvar[ss, cn, drop=FALSE])
-    ## subsample based on 2.5x2.5km^2 cell x year units
-    DAT <- DAT[sample.int(nrow(DAT)),]
-    DAT <- DAT[!duplicated(DAT$cyid),]
-    if (replace)
-        DAT <- DAT[sample.int(nrow(DAT),  nrow(DAT), replace=TRUE),]
-    if (nrow(DAT) > nmax)
-        DAT <- DAT[seq_len(nmax),]
-    DAT$cyid <- NULL
-    DAT
-}
-simple_roc <- function(labels, scores){
-    Labels <- labels[order(scores, decreasing=TRUE)]
-    data.frame(
-        TPR=cumsum(Labels)/sum(Labels),
-        FPR=cumsum(!Labels)/sum(!Labels),
-        Labels=Labels)
-}
-simple_auc <- function(ROC) {
-    ROC$inv_spec <- 1-ROC$FPR
-    dx <- diff(ROC$inv_spec)
-    sum(dx * ROC$TPR[-1]) / sum(dx)
+    daic <- sort(aic-min(aic))
+    save(daic, aic, file=paste0("d:/bam/2021/wbi/daic/", spp, ".RData"))
+    #DAIC[[spp]] <- daic
 }
 
-fit_fun <- function(i, spp, reg=NULL) {
+for (spp in names(DAIC)) {
+    daic <- DAIC[[spp]]
+    save(daic, file=paste0("d:/bam/2021/wbi/daic/", spp, ".RData"))
 
-    d <- if (is.null(reg)) {
-        get_data_all(spp, replace=i>1)
-    } else {
-        get_data_by_reg(spp, reg, replace=i>1)
-    }
-    d <- droplevels(d)
-    d$reg <- NULL
-    if (nrow(d) < 1)
-        return(structure("no data", class="try-error"))
-    if (sum(d$count) < 1)
-        return(structure("0 detections", class="try-error"))
-
-    b <- try(gbm::gbm(d$count ~ . + offset(d$offset),
-                data=d[,-(1:2)],
-                n.trees = 10^4,
-                interaction.depth = 3,
-                shrinkage = 1/10^4,
-                bag.fraction = 0.5,
-                distribution = "poisson",
-                var.monotone = NULL,#rep(0, length(4:ncol(DAT))),
-                keep.data = FALSE,
-                n.cores = 1))
-    if (inherits(b, "try-error"))
-        return(structure("gbm failed: err", class="try-error"))
-    if (is.null(b))
-        return(structure("gbm failed: null", class="try-error"))
-    nd <- d
-    logDgbm <- suppressWarnings(predict(b, newdata=nd, n.trees=b$n.trees))
-    m <- glm(count ~ .-offset, data=d, family="poisson", offset=d$offset)
-    logDglm <- model.matrix(m) %*% coef(m)
-
-    s1 <- lm(logDgbm ~ nalc, data=d)
-    s2 <- lm(logDgbm ~ ., data=d[,-(1:2)])
-    p1 <- fitted(s1)
-    p2 <- fitted(s2)
-
-    v <- data.frame(y=d$count, off=d$offset,
-        glm=logDglm, gbm=logDgbm, ssn=p1, ssa=p2)
-    rownames(v) <- rownames(d)
-
-    AUC <- apply(v, 2, function(z)
-        simple_auc(simple_roc(ifelse(v$y>0, 1, 0), exp(z+v$off))))
-
-    ## add here glm based smooth
-
-    out <- list(i=i, spp=spp,
-        reg=if (is.null(reg)) "ALL" else reg,
-        vars=colnames(d)[-(1:2)],
-        pk=rownames(v),
-        #obs=v,
-        AUC=AUC,
-        gbm=b,
-        glm=coef(m),
-        ssn=coef(s1), ssa=coef(s2))
-    class(out) <- "wb_fit"
-    out
 }
 
-print.wb_fit <- function(x, ...) {
-    cat("WB fit:", x$spp, "/", x$reg, "/", x$i, "\n")
-    print(x$AUC)
-    cat("\n")
-    invisible(x)
+DAIC <- list()
+for (spp in SPP) {
+    load(paste0("d:/bam/2021/wbi/daic/", spp, ".RData"))
+    DAIC[[spp]] <- daic
 }
+save(CN, DAIC, file="d:/bam/2021/wbi/daic.RData")
+
+
+}
+
+
 
 
 dim(get_data_by_reg("OVEN", "WBAB"))
@@ -169,8 +161,12 @@ dim(get_data_all("OVEN", replace=TRUE))
 
 ## one run for each spp
 ## use all data
-i <- 1
 SPPx <- SPP[1:30]
+#SPPx <- SPP[31:60]
+#SPPx <- SPP[61:90]
+#SPPx <- SPP[91:117]
+
+i <- 1
 for (spp in SPPx) {
     gc()
     cat(i, spp, "\n")
@@ -184,20 +180,6 @@ for (spp in SPPx) {
     qsavem(RES, file=fn)
 }
 
-# 100 run for 1 spp
-spp <- "OVEN"
-for (i in 2:100) {
-    gc()
-    cat(i, spp, "\n")
-    flush.console()
-    tmp <- try(fit_fun(i, spp, reg=NULL))
-    if (inherits(tmp, "try-error"))
-        tmp <- structure(as.character(tmp), class="try-error")
-    RES <- tmp
-    dir.create(paste0("d:/bam/2021/wbi/out/", spp))
-    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
-    qsavem(RES, file=fn)
-}
 
 ## some boot
 SPPx <- SPP[1:30]
@@ -223,3 +205,17 @@ for (i in Bv) {
     }
 }
 
+# 100 run for 1 spp
+spp <- "ALFL"
+for (i in 2:20) {
+    gc()
+    cat(i, spp, "\n")
+    flush.console()
+    tmp <- try(fit_fun(i, spp, reg=NULL))
+    if (inherits(tmp, "try-error"))
+        tmp <- structure(as.character(tmp), class="try-error")
+    RES <- tmp
+    dir.create(paste0("d:/bam/2021/wbi/out/", spp))
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
+    qsavem(RES, file=fn)
+}
