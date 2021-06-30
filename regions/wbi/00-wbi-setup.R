@@ -405,6 +405,32 @@ system.time(qsavem(dd, Y, O, ddvar, SPP, u, NN, L2,
     file="d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-25.qRData"))
 
 
+## some filtering
+library(mefa4)
+library(qs)
 
+qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-25.qRData")
+eee <- new.env()
+load("d:/bam/2021/wbi/WT-data-processed-2021-06-23.RData", envir=eee)
 
+pk <- eee$pk
+rownames(pk) <- pk$PKEY
+compare_sets(rownames(pk), rownames(dd))
+z <- pk[intersect(rownames(pk), rownames(dd)),]
+OKD <- z$ToD > 2 & z$ToD < 12
+OKY <- z$ToY > 125 & z$ToY < 200
+OK <- OKD & OKY
+NotOK <- rownames(z)[!OK]
+str(NotOK)
+
+keep <- !(rownames(dd) %in% NotOK)
+table(keep)
+
+dd <- droplevels(dd[keep,])
+ddvar <- ddvar[keep,]
+Y <- Y[keep,]
+O <- O[keep,]
+
+qsavem(dd, Y, O, ddvar, SPP,
+    file="d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-30.qRData")
 

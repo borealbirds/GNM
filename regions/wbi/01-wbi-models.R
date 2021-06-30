@@ -2,14 +2,8 @@ library(mefa4)
 library(dismo)
 library(gbm)
 library(qs)
-library(fastglm)
-library(eflm)
-
 source("~/repos/GNM/regions/wbi/functions.R")
-
-qs::qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-25.qRData")
-
-#load("~/repos/GNM/regions/wbi/subsets4.RData")
+qs::qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-30.qRData")
 load("d:/bam/2021/wbi/daic.RData")
 
 SU <- list("WBAB"=60,
@@ -18,21 +12,6 @@ SU <- list("WBAB"=60,
     "WBMB"=c(60,70,80),
     "WBSK"=c(60,80),
     "WBNT"=c(61, 70))
-## polygon area in M kmsq
-AA <- c(
-    WBAB = 440142,
-    WBBC = 283930,
-    WBYT = 425409,
-    WBMB = 542250,
-    WBSK = 394355,
-    WBNT = 993122
-)
-PP <- AA / sum(AA)
-
-tmp <- table(dd$reg)/sum(table(dd$reg))
-dx <- data.frame(Area=PP, Pts=as.numeric(tmp[names(PP)]))
-dx$Ratio <- dx$Pts / dx$Area
-
 
 
 if (FALSE) {
@@ -156,8 +135,8 @@ dim(get_data_by_reg("OVEN", "WBMB"))
 dim(get_data_by_reg("OVEN", "WBNT"))
 dim(get_data_by_reg("OVEN", "WBSK"))
 dim(get_data_by_reg("OVEN", "WBYT"))
-dim(get_data_all("OVEN"))
-dim(get_data_all("OVEN", replace=TRUE))
+dim(get_data_all("OVEN", cn0=CN))
+dim(get_data_all("OVEN", cn0=CN, replace=TRUE))
 
 ## one run for each spp
 ## use all data

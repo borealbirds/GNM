@@ -1,0 +1,206 @@
+---
+title: "Western Boreal Regional Bird Model Development"
+author: "Peter Solymos"
+date: "June 30, 2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(mefa4)
+library(dismo)
+library(gbm)
+library(qs)
+library(raster)
+library(sf)
+library(sp)
+library(rgdal)
+library(segmented)
+library(ggplot2)
+source("~/repos/GNM/regions/wbi/functions.R")
+
+lcc_crs <- "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=0 +lon_0=-95 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs"
+wb <- readOGR("d:/bam/2021/wbi/study-area")
+wb <- st_as_sf(wb)
+wb <- st_transform(wb, lcc_crs)
+levels(wb$HASC_1) <- gsub("CA\\.", "WB", levels(wb$HASC_1))
+
+qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-25.qRData")
+load("d:/bam/2021/wbi/daic.RData")
+SU <- list("WBAB"=60,
+    "WBBC"=c(4,60),
+    "WBYT"=4,
+    "WBMB"=c(60,70,80),
+    "WBSK"=c(60,80),
+    "WBNT"=c(61, 70))
+## polygon area in M kmsq
+AA <- c(
+    WBAB = 440142,
+    WBBC = 283930,
+    WBYT = 425409,
+    WBMB = 542250,
+    WBSK = 394355,
+    WBNT = 993122
+)
+PP <- AA / sum(AA)
+tmp <- table(dd$reg)/sum(table(dd$reg))
+dx <- data.frame(Area=PP, Pts=as.numeric(tmp[names(PP)]))
+dx$Ratio <- dx$Pts / dx$Area
+
+r <- raster(paste0("d:/bam/2021/wbi/mosaics/nalc.tif"))
+r[!is.na(values(r)) & values(r)==18] <- NA
+r <- as.factor(r)
+
+load("d:/bam/2021/wbi/occc.RData")
+load("d:/bam/2021/wbi/AUC.RData")
+
+ooo <- do.call(rbind, oo)[SPP,]
+auc <- do.call(rbind, AUC)[SPP,]
+met <- data.frame(
+    Species=SPP, 
+    AUC=auc[,"gbm"], 
+    Precision=ooo[,"oprec"],
+    Accuracy=ooo[,"oaccu"],
+    OCCC=ooo[,"occc"])
+
+```
+
+## Introduction
+
+The Western Boreal Initiative (WBI) aims to use available bird count data and create integrated landscape simulation outputs.
+
+The goal of this document is to outline the bird modeling component of the WBI building on the BAM National Models (v4), explaine the methods, outputs, and demonstrate the usage of the models for forecasting.
+
+## Methods
+
+### Data set
+
+The following data sets were used:
+
+- version 6 of the BAM database
+- BAM's version of the point level Canadian BBS data
+- all point-count compatible information from WildTrax
+
+Locations were retained inside of the WBI study area:
+
+```{r}
+plot(r, axes=FALSE,box=FALSE,legend=FALSE, col=hcl.colors(20, "Terrain 2"))
+plot(wb$geometry, add=TRUE)
+```
+
+```{r}
+n_pk <- table(dd$reg)
+n_ss <- table(nonDuplicated(dd, SS)$reg)
+n_rd <- table(dd$reg[ddvar$ROAD==1])
+n_ar <- table(dd$reg[dd$ARU==1])
+yrs <- sapply(names(AA), function(z) {
+    paste0(range(dd$YEAR[dd$reg==z]), collapse="-")
+})
+
+knitr::kable(
+    data.frame(
+        Subregion=names(AA), 
+        Area_km2=AA,
+        No_SS=as.numeric(n_ss[names(AA)]),
+        No_PKEY=as.numeric(n_pk[names(AA)]),
+        No_Road=as.numeric(n_rd[names(AA)]),
+        No_ARU=as.numeric(n_ar[names(AA)]),
+        Years=yrs[names(AA)]
+    ),
+row.names=FALSE)
+```
+
+The following species (AOU codes) were used: ``.
+I build models for the following `r length(SPP)` species (AOU codes): `r paste0(SPP, collapse=", ")`.
+
+Note: WildTrax data processing involved the following arbitrari decision. Abundance is sometimes given as TMTT (too many to tag) in the database. When this was encountered, I assigned the abundance value 100 to the data. This is just a way to keep track of the the records as a numeric field (and it is unlikely to get such high numbers for territorial songbirds). These placeholders (100 and multiples of 100) were replaced by the 99% percentile of the non-zero count values for each species. This truncation impacts very few of the values, but these excessive values if untreated can introduce huge bias into machine learning results.
+
+### Subsampling
+
+Susampling was applied to mitigate over/undersampling across regions, and to even out spatial sampling intensity inside the subregions.
+
+I defined a cluster ID based on a 2.5 km x 2.5 km grid, this was combined with survey year, and only 1 survey event was selected from each combination of cluster and year. The single survey was selected randomly (i.e. soring the full data set randomly and selecting every 1st datum).
+
+The subsampling was repeated independently for bootstrap iterations. The bootstrap ID 1 refers to the randomly subsampled data **without** sampling with replacement. Bootstrap IDs >1 refer to the randomly subsampled data and sampling **with** replacement. The data sets had sample size 29247. 10 replicates were run for each species.
+
+### Variable selection
+
+I used the set of variables used in the BAM National Model development. Some variables were excluded because those were unsuitable for future forecasting. Other variables were excluded bacuse in the WBI study area they represented constant value, had vary few unique values, or were highly correlated.
+
+The following `r length(CN)` variables were retained after the initial screening: `r paste0(CN, collapse=", ")`.
+
+An important consideration for model forecasting was that the number of predictors used to model density were kept at a minimum, i.e. 10-12 variables. This required to assess variable importance for each species. We have results from the BAM National models, but the subregions do not align. So I opted to assess variable importance within the ABI study area.
+
+To do that I considerd the above mentioned `r length(CN)` variables one-by-one, excluding NALC (which is a categorical variable and was included regardless of model support). I fit univariate GAMs (counts as response, QPAD offsets) with a variable as spline. Then calculated AIC value. Variables were then sorder in increasing AIC values indicating decreasing support. I used the top 10 variables. I added NALC, survey year, and ARU (ARU data 1, human point count 0) as predictors irrespective of model support.
+
+### Model training
+
+I used boosted regression trees (GBM) with species count (truncated to account for TMTT cases), QPAD offsets, and the GAM based set of predictors. Used 10 thousand trees, interaction depth of 3, bag fraction 0.5, and Poisson error distribution in GBM.
+
+### Prediction
+
+Predictions were either done for the training data or for raster cells. I used the 2011 version of predictors over the study area as 1 km$^2$ resolution rasters. When predicting outside of the actual data I fixed survey year at 2011, ARU at 0 value (i.e. standardizing for these).
+
+Prediction smoothing was done using NALC only (formerly referred to as 'post hoc binning'), or using all the same predictors. This would translate the BRT models into an easily and quickly forecasteable linear model (with dozen coefficients instead of an object with 10K trees and many splits to predict from).
+
+I suggest using the GBM models directly for prediction. This area needs further assessment which was not the goal here. Results are presented as information to further that discussion. What is clear is that NALC-only smoothing needs to be customized to take into account species ranges, i.e. there is no point in assigning abundance values outside of the range. This brings up further questions regarding range shifts in the future. The multivariate smoothing is more straightforward and is being assessed as part of the Ring of Fire regional project as well.
+
+### Assessment
+
+Prediction for the training data was used to calculate ROC/AUC (based on 0, >0 binarized counts) to assess model performance comparing predictions to observations.
+
+I clipped the BAM National Model mean abundances to serve as a visual guide to assess the range of values and possible range issues.
+
+We created marginal effect plots for NALC separately, and for the rest of the continuous predictors.
+
+We compared congruance across the 10 bootstrap replicates to see how variable results are. We used the overall concordance correlation coefficient (OCCC) which is a product of precision precision (degree of variation) and accuracy (degree of location or scale shift relative to the 1:1 line).
+
+## Results and application
+
+The following model results are auploaded to the BAM Google Drive:
+
+- 10 replicates for each species, object including the GBM model and AUC values
+- diagnostic plots: map, effects plots with variable importance, OCCC metrics
+
+The saved objects include the PKEYs used for reproducibility. More replicates can be run in a relativey short amount of time if needed (it takes less than a day to add 10 more replicates for all the `r length(SPP)` species).
+
+Code documenting data processing, model training, and prediction can be found here: <https://github.com/borealbirds/GNM/tree/master/regions/wbi>. Forecasting example is given in the `forecast-example.R` file.
+
+### Diagnostics
+
+```{r}
+knitr::kable(met, row.names=FALSE, digits=3)
+```
+
+### Example species: ALFL
+
+Top variables based on GAM:
+
+```{r}
+knitr::kable(data.frame(Delta_AIC=DAIC[["ALFL"]][1:10]))
+```
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-box-1.png)
+
+
+Detections:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-det-1.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-resp-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-occc-10.png)

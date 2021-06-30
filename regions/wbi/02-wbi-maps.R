@@ -8,7 +8,7 @@ library(raster)
 library(rgdal)
 library(nngeo)
 
-qs::qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-11.qRData")
+qs::qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-30.qRData")
 
 load("~/repos/GNM/regions/wbi/subsets4.RData")
 

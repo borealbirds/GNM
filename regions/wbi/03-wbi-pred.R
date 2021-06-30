@@ -17,10 +17,8 @@ wb <- st_as_sf(wb)
 wb <- st_transform(wb, lcc_crs)
 levels(wb$HASC_1) <- gsub("CA\\.", "WB", levels(wb$HASC_1))
 
-#qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-11.qRData")
-qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-25.qRData")
+qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-30.qRData")
 qload("d:/bam/2021/wbi/pred.qRData")
-#load("~/repos/GNM/regions/wbi/subsets.RData")
 
 
 ## !!! Important !!!
@@ -197,3 +195,53 @@ ooo <- do.call(rbind, oo)
 ooo <- ooo[order(ooo[,1]),]
 
 
+AUC <- list()
+for (spp in SPP) {
+    i <- 1
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
+    qload(fn)
+    AUC[[spp]] <- RES$AUC
+}
+save(AUC, file="d:/bam/2021/wbi/AUC.RData")
+
+
+i <- 1
+for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
+    qload(fn)
+    prd <- cbind(dd, ddvar)[RES$pk,RES$vars]
+    pr_gbm <- pfun(RES$gbm, prd, type="response")
+    y <- as.numeric(Y[RES$pk,spp])
+    o <- as.numeric(O[RES$pk,spp])
+    Mx <- max(y[y<100])
+    y[y>Mx] <- Mx
+    Predicted_GBM_w_Offset <- exp(o)*pr_gbm
+    Observed_Count <- y
+    fo <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-box-", i, ".png")
+    png(fo, width=1500, height=1000)
+    boxplot(Predicted_GBM_w_Offset ~ Observed_Count, range=0, col="gold", main=spp)
+    dev.off()
+}
+
+
+sf <- sf::st_as_sf(dd, coords = c("X","Y"))
+sf <- st_set_crs(sf, "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+sf <- st_transform(sf, lcc_crs)
+
+for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
+
+    y <- ifelse(as.numeric(Y[,spp])>0, 1, 0)
+    i0 <- y==0 & !duplicated(dd$SS)
+    i1 <- y==1 & !duplicated(dd$SS)
+
+    fo <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-det.png")
+    png(fo, width=1500, height=1000)
+    plot(sf[i0 | i1,"geometry"], pch=19, cex=0.5, col="grey", main=spp)
+    plot(wb$geometry, border=1, add=TRUE)
+    plot(sf[i1,"geometry"], pch=19, cex=0.5, col=2, add=TRUE)
+    dev.off()
+}
