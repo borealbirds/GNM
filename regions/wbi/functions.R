@@ -170,9 +170,8 @@ rel_inf <- function(res) {
     attr(x, "out.attrs") <- NULL
     mo <- lm(y ~ x, x)
     s <- try(segmented(mo, npsi=2), silent = TRUE)
-    if (inherits(s, "try-error"))
-        s <- segmented(mo, npsi=1)
-    x$segm <- predict(s)
+    x$segm <- if (inherits(s, "try-error"))
+        predict(mo) else predict(s)
     x$segm[x$segm <= 0] <- min(x$segm[x$segm > 0])
     x
 }

@@ -37,7 +37,7 @@ values(r)[!is.na(values(r))] <- 0
 
 #spp <- "ALFL"
 i <- 1
-for (spp in SPP) {
+for (spp in SPPx) {
     cat(spp, "\n")
     flush.console()
     gc()
@@ -81,18 +81,35 @@ for (spp in SPP) {
         par(op)
         dev.off()
 
-        fo2 <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-resp-", i, ".png")
-        png(fo2, width=1500, height=1000)
-        plot_fun(RES$gbm)
-        dev.off()
-
-        fo3 <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-resp-nalc-", i, ".png")
-        png(fo3)
-        plot(RES$gbm, "nalc")
-        dev.off()
 
     }
 }
+
+for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
+    qload(fn)
+
+    fo2 <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-resp-", i, ".png")
+    png(fo2, width=1500, height=1000)
+    p <- plot_fun(RES$gbm)
+    print(p)
+    dev.off()
+}
+
+for (spp in SPP) {
+    cat(spp, "\n")
+    flush.console()
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
+    qload(fn)
+
+    fo3 <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-resp-nalc-", i, ".png")
+    png(fo3)
+    print(plot(RES$gbm, "nalc"))
+    dev.off()
+}
+
 
 #qsavem(pr, file=paste0("d:/bam/2021/wbi/res/", spp, "/", "WB-", spp, "-preds.qRData"))
 
