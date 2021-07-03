@@ -1,8 +1,12 @@
 ---
 title: "Western Boreal Regional Bird Model Development"
 author: "Peter Solymos"
-date: "June 30, 2021"
-output: word_document
+mail: "solymos@ualberta.ca"
+date: "2021-07-01"
+output:
+  html_document:
+    toc: true
+    toc_float: true
 ---
 
 ```{r setup, include=FALSE}
@@ -17,6 +21,8 @@ library(sp)
 library(rgdal)
 library(segmented)
 library(ggplot2)
+library(jsonlite)
+
 source("~/repos/GNM/regions/wbi/functions.R")
 
 lcc_crs <- "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=0 +lon_0=-95 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs"
@@ -51,17 +57,7 @@ r <- raster(paste0("d:/bam/2021/wbi/mosaics/nalc.tif"))
 r[!is.na(values(r)) & values(r)==18] <- NA
 r <- as.factor(r)
 
-load("d:/bam/2021/wbi/occc.RData")
-load("d:/bam/2021/wbi/AUC.RData")
-
-ooo <- do.call(rbind, oo)[SPP,]
-auc <- do.call(rbind, AUC)[SPP,]
-met <- data.frame(
-    Species=SPP, 
-    AUC=auc[,"gbm"], 
-    Precision=ooo[,"oprec"],
-    Accuracy=ooo[,"oaccu"],
-    OCCC=ooo[,"occc"])
+x <- read.csv("d:/bam/2021/wbi/whi-stats.csv")
 
 ```
 
@@ -101,16 +97,15 @@ knitr::kable(
     data.frame(
         Subregion=names(AA), 
         Area_km2=AA,
-        No_SS=as.numeric(n_ss[names(AA)]),
-        No_PKEY=as.numeric(n_pk[names(AA)]),
-        No_Road=as.numeric(n_rd[names(AA)]),
-        No_ARU=as.numeric(n_ar[names(AA)]),
+        n_SS=as.numeric(n_ss[names(AA)]),
+        n_PKEY=as.numeric(n_pk[names(AA)]),
+        n_Road=as.numeric(n_rd[names(AA)]),
+        n_ARU=as.numeric(n_ar[names(AA)]),
         Years=yrs[names(AA)]
     ),
 row.names=FALSE)
 ```
 
-The following species (AOU codes) were used: ``.
 I build models for the following `r length(SPP)` species (AOU codes): `r paste0(SPP, collapse=", ")`.
 
 Note: WildTrax data processing involved the following arbitrari decision. Abundance is sometimes given as TMTT (too many to tag) in the database. When this was encountered, I assigned the abundance value 100 to the data. This is just a way to keep track of the the records as a numeric field (and it is unlikely to get such high numbers for territorial songbirds). These placeholders (100 and multiples of 100) were replaced by the 99% percentile of the non-zero count values for each species. This truncation impacts very few of the values, but these excessive values if untreated can introduce huge bias into machine learning results.
@@ -166,41 +161,48 @@ The saved objects include the PKEYs used for reproducibility. More replicates ca
 
 Code documenting data processing, model training, and prediction can be found here: <https://github.com/borealbirds/GNM/tree/master/regions/wbi>. Forecasting example is given in the `forecast-example.R` file.
 
-### Diagnostics
+## Diagnostics
+
+Some species had low AUC values, these tended to be the rare species:
 
 ```{r}
-knitr::kable(met, row.names=FALSE, digits=3)
+plot(x[,c("P_Occ", "AUC")], xlim=c(0,1), ylim=c(0,1))
+abline(h=0.5, lty=2)
 ```
 
-### Example species: ALFL
-
-Top variables based on GAM:
+Here are 10 species from the bottom:
 
 ```{r}
-knitr::kable(data.frame(Delta_AIC=DAIC[["ALFL"]][1:10]))
+knitr::kable(x[order(x$AUC),c("Species", "P_Occ", "AUC")][1:10,], row.names=FALSE, digits=3)
 ```
 
-Boxplot showing expected (density with QPAD correction) vs. observed counts:
+The low OCCC values indicated for some species that the bootstrap replicates might result in different ranking of habitats (low precision) or uncertainty regarding the actual abundance values (low accuracy):
 
-![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-box-1.png)
+```{r}
+plot(x[,c("oaccu", "oprec")], xlim=c(0,1), ylim=c(0,1))
+abline(h=0.5, v=0.5, lty=2)
+```
 
+Here are 10 species from the bottom with lowest precision (the more important metric):
 
-Detections:
+```{r}
+knitr::kable(x[order(x$oprec),c("Species","occc", "oprec","oaccu")][1:10,], row.names=FALSE, digits=3)
+```
 
-![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-det-1.png)
+We also compared population size estimates from the clipped National Model surface (GNM) and the current regional models (GBM):
 
-Map:
+```{r}
+plot(x[,c("N_GNM", "N_GBM")])
+abline(0, 1, lty=2)
+```
 
-![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-pred-1.png)
+Here are the details for each species:
 
-Marginal effects for NALC:
+```{r}
+knitr::kable(x[,-1], row.names=FALSE, digits=3)
+```
 
-![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-resp-nalc-1.png)
+## Species results
 
-Marginal effects for continuous predictors:
+I list all the results for each species that can be evaluated to decide which species to drop due to poor model performance (range edge related or overall rarity that makes estimation difficult).
 
-![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-resp-1.png)
-
-Bootstrap prediction concordance:
-
-![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-occc-10.png)

@@ -1,0 +1,3484 @@
+---
+title: "Western Boreal Regional Bird Model Development"
+author: "Peter Solymos"
+mail: "solymos@ualberta.ca"
+date: "2021-07-01"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(mefa4)
+library(dismo)
+library(gbm)
+library(qs)
+library(raster)
+library(sf)
+library(sp)
+library(rgdal)
+library(segmented)
+library(ggplot2)
+library(jsonlite)
+
+source("~/repos/GNM/regions/wbi/functions.R")
+
+lcc_crs <- "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=0 +lon_0=-95 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs"
+wb <- readOGR("d:/bam/2021/wbi/study-area")
+wb <- st_as_sf(wb)
+wb <- st_transform(wb, lcc_crs)
+levels(wb$HASC_1) <- gsub("CA\\.", "WB", levels(wb$HASC_1))
+
+qload("d:/bam/2021/wbi/WBI-data_BAMv4v6-WBAreas_2021-06-25.qRData")
+load("d:/bam/2021/wbi/daic.RData")
+SU <- list("WBAB"=60,
+    "WBBC"=c(4,60),
+    "WBYT"=4,
+    "WBMB"=c(60,70,80),
+    "WBSK"=c(60,80),
+    "WBNT"=c(61, 70))
+## polygon area in M kmsq
+AA <- c(
+    WBAB = 440142,
+    WBBC = 283930,
+    WBYT = 425409,
+    WBMB = 542250,
+    WBSK = 394355,
+    WBNT = 993122
+)
+PP <- AA / sum(AA)
+tmp <- table(dd$reg)/sum(table(dd$reg))
+dx <- data.frame(Area=PP, Pts=as.numeric(tmp[names(PP)]))
+dx$Ratio <- dx$Pts / dx$Area
+
+r <- raster(paste0("d:/bam/2021/wbi/mosaics/nalc.tif"))
+r[!is.na(values(r)) & values(r)==18] <- NA
+r <- as.factor(r)
+
+x <- read.csv("d:/bam/2021/wbi/whi-stats.csv")
+
+```
+
+## Introduction
+
+The Western Boreal Initiative (WBI) aims to use available bird count data and create integrated landscape simulation outputs.
+
+The goal of this document is to outline the bird modeling component of the WBI building on the BAM National Models (v4), explaine the methods, outputs, and demonstrate the usage of the models for forecasting.
+
+## Methods
+
+### Data set
+
+The following data sets were used:
+
+- version 6 of the BAM database
+- BAM's version of the point level Canadian BBS data
+- all point-count compatible information from WildTrax
+
+Locations were retained inside of the WBI study area:
+
+```{r}
+plot(r, axes=FALSE,box=FALSE,legend=FALSE, col=hcl.colors(20, "Terrain 2"))
+plot(wb$geometry, add=TRUE)
+```
+
+```{r}
+n_pk <- table(dd$reg)
+n_ss <- table(nonDuplicated(dd, SS)$reg)
+n_rd <- table(dd$reg[ddvar$ROAD==1])
+n_ar <- table(dd$reg[dd$ARU==1])
+yrs <- sapply(names(AA), function(z) {
+    paste0(range(dd$YEAR[dd$reg==z]), collapse="-")
+})
+
+knitr::kable(
+    data.frame(
+        Subregion=names(AA), 
+        Area_km2=AA,
+        n_SS=as.numeric(n_ss[names(AA)]),
+        n_PKEY=as.numeric(n_pk[names(AA)]),
+        n_Road=as.numeric(n_rd[names(AA)]),
+        n_ARU=as.numeric(n_ar[names(AA)]),
+        Years=yrs[names(AA)]
+    ),
+row.names=FALSE)
+```
+
+I build models for the following `r length(SPP)` species (AOU codes): `r paste0(SPP, collapse=", ")`.
+
+Note: WildTrax data processing involved the following arbitrari decision. Abundance is sometimes given as TMTT (too many to tag) in the database. When this was encountered, I assigned the abundance value 100 to the data. This is just a way to keep track of the the records as a numeric field (and it is unlikely to get such high numbers for territorial songbirds). These placeholders (100 and multiples of 100) were replaced by the 99% percentile of the non-zero count values for each species. This truncation impacts very few of the values, but these excessive values if untreated can introduce huge bias into machine learning results.
+
+### Subsampling
+
+Susampling was applied to mitigate over/undersampling across regions, and to even out spatial sampling intensity inside the subregions.
+
+I defined a cluster ID based on a 2.5 km x 2.5 km grid, this was combined with survey year, and only 1 survey event was selected from each combination of cluster and year. The single survey was selected randomly (i.e. soring the full data set randomly and selecting every 1st datum).
+
+The subsampling was repeated independently for bootstrap iterations. The bootstrap ID 1 refers to the randomly subsampled data **without** sampling with replacement. Bootstrap IDs >1 refer to the randomly subsampled data and sampling **with** replacement. The data sets had sample size 29247. 10 replicates were run for each species.
+
+### Variable selection
+
+I used the set of variables used in the BAM National Model development. Some variables were excluded because those were unsuitable for future forecasting. Other variables were excluded bacuse in the WBI study area they represented constant value, had vary few unique values, or were highly correlated.
+
+The following `r length(CN)` variables were retained after the initial screening: `r paste0(CN, collapse=", ")`.
+
+An important consideration for model forecasting was that the number of predictors used to model density were kept at a minimum, i.e. 10-12 variables. This required to assess variable importance for each species. We have results from the BAM National models, but the subregions do not align. So I opted to assess variable importance within the ABI study area.
+
+To do that I considerd the above mentioned `r length(CN)` variables one-by-one, excluding NALC (which is a categorical variable and was included regardless of model support). I fit univariate GAMs (counts as response, QPAD offsets) with a variable as spline. Then calculated AIC value. Variables were then sorder in increasing AIC values indicating decreasing support. I used the top 10 variables. I added NALC, survey year, and ARU (ARU data 1, human point count 0) as predictors irrespective of model support.
+
+### Model training
+
+I used boosted regression trees (GBM) with species count (truncated to account for TMTT cases), QPAD offsets, and the GAM based set of predictors. Used 10 thousand trees, interaction depth of 3, bag fraction 0.5, and Poisson error distribution in GBM.
+
+### Prediction
+
+Predictions were either done for the training data or for raster cells. I used the 2011 version of predictors over the study area as 1 km$^2$ resolution rasters. When predicting outside of the actual data I fixed survey year at 2011, ARU at 0 value (i.e. standardizing for these).
+
+Prediction smoothing was done using NALC only (formerly referred to as 'post hoc binning'), or using all the same predictors. This would translate the BRT models into an easily and quickly forecasteable linear model (with dozen coefficients instead of an object with 10K trees and many splits to predict from).
+
+I suggest using the GBM models directly for prediction. This area needs further assessment which was not the goal here. Results are presented as information to further that discussion. What is clear is that NALC-only smoothing needs to be customized to take into account species ranges, i.e. there is no point in assigning abundance values outside of the range. This brings up further questions regarding range shifts in the future. The multivariate smoothing is more straightforward and is being assessed as part of the Ring of Fire regional project as well.
+
+### Assessment
+
+Prediction for the training data was used to calculate ROC/AUC (based on 0, >0 binarized counts) to assess model performance comparing predictions to observations.
+
+I clipped the BAM National Model mean abundances to serve as a visual guide to assess the range of values and possible range issues.
+
+We created marginal effect plots for NALC separately, and for the rest of the continuous predictors.
+
+We compared congruance across the 10 bootstrap replicates to see how variable results are. We used the overall concordance correlation coefficient (OCCC) which is a product of precision precision (degree of variation) and accuracy (degree of location or scale shift relative to the 1:1 line).
+
+## Results and application
+
+The following model results are auploaded to the BAM Google Drive:
+
+- 10 replicates for each species, object including the GBM model and AUC values
+- diagnostic plots: map, effects plots with variable importance, OCCC metrics
+
+The saved objects include the PKEYs used for reproducibility. More replicates can be run in a relativey short amount of time if needed (it takes less than a day to add 10 more replicates for all the `r length(SPP)` species).
+
+Code documenting data processing, model training, and prediction can be found here: <https://github.com/borealbirds/GNM/tree/master/regions/wbi>. Forecasting example is given in the `forecast-example.R` file.
+
+## Diagnostics
+
+Some species had low AUC values, these tended to be the rare species:
+
+```{r}
+plot(x[,c("P_Occ", "AUC")], xlim=c(0,1), ylim=c(0,1))
+abline(h=0.5, lty=2)
+```
+
+Here are 10 species from the bottom:
+
+```{r}
+knitr::kable(x[order(x$AUC),c("Species", "P_Occ", "AUC")][1:10,], row.names=FALSE, digits=3)
+```
+
+The low OCCC values indicated for some species that the bootstrap replicates might result in different ranking of habitats (low precision) or uncertainty regarding the actual abundance values (low accuracy):
+
+```{r}
+plot(x[,c("oaccu", "oprec")], xlim=c(0,1), ylim=c(0,1))
+abline(h=0.5, v=0.5, lty=2)
+```
+
+Here are 10 species from the bottom with lowest precision (the more important metric):
+
+```{r}
+knitr::kable(x[order(x$oprec),c("Species","occc", "oprec","oaccu")][1:10,], row.names=FALSE, digits=3)
+```
+
+We also compared population size estimates from the clipped National Model surface (GNM) and the current regional models (GBM):
+
+```{r}
+plot(x[,c("N_GNM", "N_GBM")])
+abline(0, 1, lty=2)
+```
+
+Here are the details for each species:
+
+```{r}
+knitr::kable(x[,-1], row.names=FALSE, digits=3)
+```
+
+## Species results
+
+I list all the results for each species that can be evaluated to decide which species to drop due to poor model performance (range edge related or overall rarity that makes estimation difficult).
+
+### Alder Flycatcher
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/ALFL/WB-ALFL-occc-10.png)
+
+
+
+### American Crow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/AMCR/WB-AMCR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/AMCR/WB-AMCR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/AMCR/WB-AMCR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/AMCR/WB-AMCR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/AMCR/WB-AMCR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/AMCR/WB-AMCR-occc-10.png)
+
+
+
+### American Goldfinch
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/AMGO/WB-AMGO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/AMGO/WB-AMGO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/AMGO/WB-AMGO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/AMGO/WB-AMGO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/AMGO/WB-AMGO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/AMGO/WB-AMGO-occc-10.png)
+
+
+
+### American Redstart
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/AMRE/WB-AMRE-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/AMRE/WB-AMRE-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/AMRE/WB-AMRE-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/AMRE/WB-AMRE-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/AMRE/WB-AMRE-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/AMRE/WB-AMRE-occc-10.png)
+
+
+
+### American Robin
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/AMRO/WB-AMRO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/AMRO/WB-AMRO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/AMRO/WB-AMRO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/AMRO/WB-AMRO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/AMRO/WB-AMRO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/AMRO/WB-AMRO-occc-10.png)
+
+
+
+### American Tree Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/ATSP/WB-ATSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/ATSP/WB-ATSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/ATSP/WB-ATSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/ATSP/WB-ATSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/ATSP/WB-ATSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/ATSP/WB-ATSP-occc-10.png)
+
+
+
+### American Three-toed Woodpecker
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/ATTW/WB-ATTW-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/ATTW/WB-ATTW-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/ATTW/WB-ATTW-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/ATTW/WB-ATTW-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/ATTW/WB-ATTW-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/ATTW/WB-ATTW-occc-10.png)
+
+
+
+### Baltimore Oriole
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BAOR/WB-BAOR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BAOR/WB-BAOR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BAOR/WB-BAOR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BAOR/WB-BAOR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BAOR/WB-BAOR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BAOR/WB-BAOR-occc-10.png)
+
+
+
+### Barn Swallow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BARS/WB-BARS-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BARS/WB-BARS-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BARS/WB-BARS-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BARS/WB-BARS-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BARS/WB-BARS-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BARS/WB-BARS-occc-10.png)
+
+
+
+### Black-and-white Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BAWW/WB-BAWW-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BAWW/WB-BAWW-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BAWW/WB-BAWW-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BAWW/WB-BAWW-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BAWW/WB-BAWW-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BAWW/WB-BAWW-occc-10.png)
+
+
+
+### Black-billed Cuckoo
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BBCU/WB-BBCU-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BBCU/WB-BBCU-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BBCU/WB-BBCU-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BBCU/WB-BBCU-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BBCU/WB-BBCU-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BBCU/WB-BBCU-occc-10.png)
+
+
+
+### Black-billed Magpie
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BBMA/WB-BBMA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BBMA/WB-BBMA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BBMA/WB-BBMA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BBMA/WB-BBMA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BBMA/WB-BBMA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BBMA/WB-BBMA-occc-10.png)
+
+
+
+### Bay-breasted Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BBWA/WB-BBWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BBWA/WB-BBWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BBWA/WB-BBWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BBWA/WB-BBWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BBWA/WB-BBWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BBWA/WB-BBWA-occc-10.png)
+
+
+
+### Black-backed Woodpecker
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BBWO/WB-BBWO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BBWO/WB-BBWO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BBWO/WB-BBWO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BBWO/WB-BBWO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BBWO/WB-BBWO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BBWO/WB-BBWO-occc-10.png)
+
+
+
+### Black-capped Chickadee
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BCCH/WB-BCCH-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BCCH/WB-BCCH-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BCCH/WB-BCCH-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BCCH/WB-BCCH-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BCCH/WB-BCCH-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BCCH/WB-BCCH-occc-10.png)
+
+
+
+### Belted Kingfisher
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BEKI/WB-BEKI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BEKI/WB-BEKI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BEKI/WB-BEKI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BEKI/WB-BEKI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BEKI/WB-BEKI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BEKI/WB-BEKI-occc-10.png)
+
+
+
+### Brown-headed Cowbird
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BHCO/WB-BHCO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BHCO/WB-BHCO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BHCO/WB-BHCO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BHCO/WB-BHCO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BHCO/WB-BHCO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BHCO/WB-BHCO-occc-10.png)
+
+
+
+### Blue-headed Vireo
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BHVI/WB-BHVI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BHVI/WB-BHVI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BHVI/WB-BHVI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BHVI/WB-BHVI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BHVI/WB-BHVI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BHVI/WB-BHVI-occc-10.png)
+
+
+
+### Blackburnian Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BLBW/WB-BLBW-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BLBW/WB-BLBW-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BLBW/WB-BLBW-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BLBW/WB-BLBW-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BLBW/WB-BLBW-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BLBW/WB-BLBW-occc-10.png)
+
+
+
+### Blue Jay
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BLJA/WB-BLJA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BLJA/WB-BLJA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BLJA/WB-BLJA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BLJA/WB-BLJA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BLJA/WB-BLJA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BLJA/WB-BLJA-occc-10.png)
+
+
+
+### Blackpoll Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BLPW/WB-BLPW-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BLPW/WB-BLPW-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BLPW/WB-BLPW-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BLPW/WB-BLPW-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BLPW/WB-BLPW-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BLPW/WB-BLPW-occc-10.png)
+
+
+
+### Bobolink
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BOBO/WB-BOBO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BOBO/WB-BOBO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BOBO/WB-BOBO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BOBO/WB-BOBO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BOBO/WB-BOBO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BOBO/WB-BOBO-occc-10.png)
+
+
+
+### Boreal Chickadee
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BOCH/WB-BOCH-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BOCH/WB-BOCH-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BOCH/WB-BOCH-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BOCH/WB-BOCH-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BOCH/WB-BOCH-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BOCH/WB-BOCH-occc-10.png)
+
+
+
+### Bohemian Waxwing
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BOWA/WB-BOWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BOWA/WB-BOWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BOWA/WB-BOWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BOWA/WB-BOWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BOWA/WB-BOWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BOWA/WB-BOWA-occc-10.png)
+
+
+
+### Brewer's Blackbird
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BRBL/WB-BRBL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BRBL/WB-BRBL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BRBL/WB-BRBL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BRBL/WB-BRBL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BRBL/WB-BRBL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BRBL/WB-BRBL-occc-10.png)
+
+
+
+### Brown Creeper
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BRCR/WB-BRCR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BRCR/WB-BRCR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BRCR/WB-BRCR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BRCR/WB-BRCR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BRCR/WB-BRCR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BRCR/WB-BRCR-occc-10.png)
+
+
+
+### Black-throated Green Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/BTNW/WB-BTNW-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/BTNW/WB-BTNW-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/BTNW/WB-BTNW-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/BTNW/WB-BTNW-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/BTNW/WB-BTNW-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/BTNW/WB-BTNW-occc-10.png)
+
+
+
+### Canada Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/CAWA/WB-CAWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/CAWA/WB-CAWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/CAWA/WB-CAWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/CAWA/WB-CAWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/CAWA/WB-CAWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/CAWA/WB-CAWA-occc-10.png)
+
+
+
+### Clay-colored Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/CCSP/WB-CCSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/CCSP/WB-CCSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/CCSP/WB-CCSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/CCSP/WB-CCSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/CCSP/WB-CCSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/CCSP/WB-CCSP-occc-10.png)
+
+
+
+### Cedar Waxwing
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/CEDW/WB-CEDW-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/CEDW/WB-CEDW-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/CEDW/WB-CEDW-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/CEDW/WB-CEDW-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/CEDW/WB-CEDW-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/CEDW/WB-CEDW-occc-10.png)
+
+
+
+### Chipping Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/CHSP/WB-CHSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/CHSP/WB-CHSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/CHSP/WB-CHSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/CHSP/WB-CHSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/CHSP/WB-CHSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/CHSP/WB-CHSP-occc-10.png)
+
+
+
+### Cape May Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/CMWA/WB-CMWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/CMWA/WB-CMWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/CMWA/WB-CMWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/CMWA/WB-CMWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/CMWA/WB-CMWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/CMWA/WB-CMWA-occc-10.png)
+
+
+
+### Common Grackle
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/COGR/WB-COGR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/COGR/WB-COGR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/COGR/WB-COGR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/COGR/WB-COGR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/COGR/WB-COGR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/COGR/WB-COGR-occc-10.png)
+
+
+
+### Connecticut Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/CONW/WB-CONW-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/CONW/WB-CONW-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/CONW/WB-CONW-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/CONW/WB-CONW-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/CONW/WB-CONW-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/CONW/WB-CONW-occc-10.png)
+
+
+
+### Common Raven
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/CORA/WB-CORA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/CORA/WB-CORA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/CORA/WB-CORA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/CORA/WB-CORA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/CORA/WB-CORA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/CORA/WB-CORA-occc-10.png)
+
+
+
+### Common Yellowthroat
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/COYE/WB-COYE-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/COYE/WB-COYE-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/COYE/WB-COYE-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/COYE/WB-COYE-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/COYE/WB-COYE-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/COYE/WB-COYE-occc-10.png)
+
+
+
+### Chestnut-sided Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/CSWA/WB-CSWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/CSWA/WB-CSWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/CSWA/WB-CSWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/CSWA/WB-CSWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/CSWA/WB-CSWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/CSWA/WB-CSWA-occc-10.png)
+
+
+
+### Dark-eyed Junco
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/DEJU/WB-DEJU-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/DEJU/WB-DEJU-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/DEJU/WB-DEJU-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/DEJU/WB-DEJU-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/DEJU/WB-DEJU-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/DEJU/WB-DEJU-occc-10.png)
+
+
+
+### Downy Woodpecker
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/DOWO/WB-DOWO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/DOWO/WB-DOWO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/DOWO/WB-DOWO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/DOWO/WB-DOWO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/DOWO/WB-DOWO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/DOWO/WB-DOWO-occc-10.png)
+
+
+
+### Eastern Kingbird
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/EAKI/WB-EAKI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/EAKI/WB-EAKI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/EAKI/WB-EAKI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/EAKI/WB-EAKI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/EAKI/WB-EAKI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/EAKI/WB-EAKI-occc-10.png)
+
+
+
+### Eastern Phoebe
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/EAPH/WB-EAPH-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/EAPH/WB-EAPH-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/EAPH/WB-EAPH-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/EAPH/WB-EAPH-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/EAPH/WB-EAPH-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/EAPH/WB-EAPH-occc-10.png)
+
+
+
+### European Starling
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/EUST/WB-EUST-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/EUST/WB-EUST-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/EUST/WB-EUST-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/EUST/WB-EUST-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/EUST/WB-EUST-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/EUST/WB-EUST-occc-10.png)
+
+
+
+### Evening Grosbeak
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/EVGR/WB-EVGR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/EVGR/WB-EVGR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/EVGR/WB-EVGR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/EVGR/WB-EVGR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/EVGR/WB-EVGR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/EVGR/WB-EVGR-occc-10.png)
+
+
+
+### Fox Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/FOSP/WB-FOSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/FOSP/WB-FOSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/FOSP/WB-FOSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/FOSP/WB-FOSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/FOSP/WB-FOSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/FOSP/WB-FOSP-occc-10.png)
+
+
+
+### Great Crested Flycatcher
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/GCFL/WB-GCFL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/GCFL/WB-GCFL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/GCFL/WB-GCFL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/GCFL/WB-GCFL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/GCFL/WB-GCFL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/GCFL/WB-GCFL-occc-10.png)
+
+
+
+### Golden-crowned Kinglet
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/GCKI/WB-GCKI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/GCKI/WB-GCKI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/GCKI/WB-GCKI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/GCKI/WB-GCKI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/GCKI/WB-GCKI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/GCKI/WB-GCKI-occc-10.png)
+
+
+
+### Golden-crowned Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/GCSP/WB-GCSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/GCSP/WB-GCSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/GCSP/WB-GCSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/GCSP/WB-GCSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/GCSP/WB-GCSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/GCSP/WB-GCSP-occc-10.png)
+
+
+
+### Gray-cheeked Thrush
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/GCTH/WB-GCTH-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/GCTH/WB-GCTH-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/GCTH/WB-GCTH-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/GCTH/WB-GCTH-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/GCTH/WB-GCTH-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/GCTH/WB-GCTH-occc-10.png)
+
+
+
+### Gray Jay
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/GRAJ/WB-GRAJ-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/GRAJ/WB-GRAJ-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/GRAJ/WB-GRAJ-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/GRAJ/WB-GRAJ-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/GRAJ/WB-GRAJ-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/GRAJ/WB-GRAJ-occc-10.png)
+
+
+
+### Gray Catbird
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/GRCA/WB-GRCA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/GRCA/WB-GRCA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/GRCA/WB-GRCA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/GRCA/WB-GRCA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/GRCA/WB-GRCA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/GRCA/WB-GRCA-occc-10.png)
+
+
+
+### Greater Yellowlegs
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/GRYE/WB-GRYE-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/GRYE/WB-GRYE-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/GRYE/WB-GRYE-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/GRYE/WB-GRYE-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/GRYE/WB-GRYE-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/GRYE/WB-GRYE-occc-10.png)
+
+
+
+### Hammond's Flycatcher
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/HAFL/WB-HAFL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/HAFL/WB-HAFL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/HAFL/WB-HAFL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/HAFL/WB-HAFL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/HAFL/WB-HAFL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/HAFL/WB-HAFL-occc-10.png)
+
+
+
+### Hairy Woodpecker
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/HAWO/WB-HAWO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/HAWO/WB-HAWO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/HAWO/WB-HAWO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/HAWO/WB-HAWO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/HAWO/WB-HAWO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/HAWO/WB-HAWO-occc-10.png)
+
+
+
+### Hermit Thrush
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/HETH/WB-HETH-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/HETH/WB-HETH-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/HETH/WB-HETH-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/HETH/WB-HETH-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/HETH/WB-HETH-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/HETH/WB-HETH-occc-10.png)
+
+
+
+### Horned Lark
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/HOLA/WB-HOLA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/HOLA/WB-HOLA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/HOLA/WB-HOLA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/HOLA/WB-HOLA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/HOLA/WB-HOLA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/HOLA/WB-HOLA-occc-10.png)
+
+
+
+### House Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/HOSP/WB-HOSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/HOSP/WB-HOSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/HOSP/WB-HOSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/HOSP/WB-HOSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/HOSP/WB-HOSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/HOSP/WB-HOSP-occc-10.png)
+
+
+
+### House Wren
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/HOWR/WB-HOWR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/HOWR/WB-HOWR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/HOWR/WB-HOWR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/HOWR/WB-HOWR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/HOWR/WB-HOWR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/HOWR/WB-HOWR-occc-10.png)
+
+
+
+### Killdeer
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/KILL/WB-KILL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/KILL/WB-KILL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/KILL/WB-KILL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/KILL/WB-KILL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/KILL/WB-KILL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/KILL/WB-KILL-occc-10.png)
+
+
+
+### Lapland Longspur
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/LALO/WB-LALO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/LALO/WB-LALO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/LALO/WB-LALO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/LALO/WB-LALO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/LALO/WB-LALO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/LALO/WB-LALO-occc-10.png)
+
+
+
+### Le Conte's Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/LCSP/WB-LCSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/LCSP/WB-LCSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/LCSP/WB-LCSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/LCSP/WB-LCSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/LCSP/WB-LCSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/LCSP/WB-LCSP-occc-10.png)
+
+
+
+### Least Flycatcher
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/LEFL/WB-LEFL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/LEFL/WB-LEFL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/LEFL/WB-LEFL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/LEFL/WB-LEFL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/LEFL/WB-LEFL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/LEFL/WB-LEFL-occc-10.png)
+
+
+
+### Lesser Yellowlegs
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/LEYE/WB-LEYE-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/LEYE/WB-LEYE-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/LEYE/WB-LEYE-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/LEYE/WB-LEYE-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/LEYE/WB-LEYE-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/LEYE/WB-LEYE-occc-10.png)
+
+
+
+### Lincoln's Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/LISP/WB-LISP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/LISP/WB-LISP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/LISP/WB-LISP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/LISP/WB-LISP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/LISP/WB-LISP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/LISP/WB-LISP-occc-10.png)
+
+
+
+### Magnolia Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/MAWA/WB-MAWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/MAWA/WB-MAWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/MAWA/WB-MAWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/MAWA/WB-MAWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/MAWA/WB-MAWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/MAWA/WB-MAWA-occc-10.png)
+
+
+
+### Marsh Wren
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/MAWR/WB-MAWR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/MAWR/WB-MAWR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/MAWR/WB-MAWR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/MAWR/WB-MAWR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/MAWR/WB-MAWR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/MAWR/WB-MAWR-occc-10.png)
+
+
+
+### Mourning Dove
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/MODO/WB-MODO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/MODO/WB-MODO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/MODO/WB-MODO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/MODO/WB-MODO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/MODO/WB-MODO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/MODO/WB-MODO-occc-10.png)
+
+
+
+### Mourning Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/MOWA/WB-MOWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/MOWA/WB-MOWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/MOWA/WB-MOWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/MOWA/WB-MOWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/MOWA/WB-MOWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/MOWA/WB-MOWA-occc-10.png)
+
+
+
+### Nashville Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/NAWA/WB-NAWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/NAWA/WB-NAWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/NAWA/WB-NAWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/NAWA/WB-NAWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/NAWA/WB-NAWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/NAWA/WB-NAWA-occc-10.png)
+
+
+
+### Northern Flicker
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/NOFL/WB-NOFL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/NOFL/WB-NOFL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/NOFL/WB-NOFL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/NOFL/WB-NOFL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/NOFL/WB-NOFL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/NOFL/WB-NOFL-occc-10.png)
+
+
+
+### Northern Waterthrush
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/NOWA/WB-NOWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/NOWA/WB-NOWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/NOWA/WB-NOWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/NOWA/WB-NOWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/NOWA/WB-NOWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/NOWA/WB-NOWA-occc-10.png)
+
+
+
+### Orange-crowned Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/OCWA/WB-OCWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/OCWA/WB-OCWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/OCWA/WB-OCWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/OCWA/WB-OCWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/OCWA/WB-OCWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/OCWA/WB-OCWA-occc-10.png)
+
+
+
+### Olive-sided Flycatcher
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/OSFL/WB-OSFL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/OSFL/WB-OSFL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/OSFL/WB-OSFL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/OSFL/WB-OSFL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/OSFL/WB-OSFL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/OSFL/WB-OSFL-occc-10.png)
+
+
+
+### Ovenbird
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/OVEN/WB-OVEN-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/OVEN/WB-OVEN-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/OVEN/WB-OVEN-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/OVEN/WB-OVEN-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/OVEN/WB-OVEN-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/OVEN/WB-OVEN-occc-10.png)
+
+
+
+### Palm Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/PAWA/WB-PAWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/PAWA/WB-PAWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/PAWA/WB-PAWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/PAWA/WB-PAWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/PAWA/WB-PAWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/PAWA/WB-PAWA-occc-10.png)
+
+
+
+### Philadelphia Vireo
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/PHVI/WB-PHVI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/PHVI/WB-PHVI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/PHVI/WB-PHVI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/PHVI/WB-PHVI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/PHVI/WB-PHVI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/PHVI/WB-PHVI-occc-10.png)
+
+
+
+### Pine Grosbeak
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/PIGR/WB-PIGR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/PIGR/WB-PIGR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/PIGR/WB-PIGR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/PIGR/WB-PIGR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/PIGR/WB-PIGR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/PIGR/WB-PIGR-occc-10.png)
+
+
+
+### Pine Siskin
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/PISI/WB-PISI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/PISI/WB-PISI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/PISI/WB-PISI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/PISI/WB-PISI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/PISI/WB-PISI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/PISI/WB-PISI-occc-10.png)
+
+
+
+### Pileated Woodpecker
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/PIWO/WB-PIWO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/PIWO/WB-PIWO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/PIWO/WB-PIWO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/PIWO/WB-PIWO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/PIWO/WB-PIWO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/PIWO/WB-PIWO-occc-10.png)
+
+
+
+### Purple Finch
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/PUFI/WB-PUFI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/PUFI/WB-PUFI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/PUFI/WB-PUFI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/PUFI/WB-PUFI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/PUFI/WB-PUFI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/PUFI/WB-PUFI-occc-10.png)
+
+
+
+### Rose-breasted Grosbeak
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/RBGR/WB-RBGR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/RBGR/WB-RBGR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/RBGR/WB-RBGR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/RBGR/WB-RBGR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/RBGR/WB-RBGR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/RBGR/WB-RBGR-occc-10.png)
+
+
+
+### Red-breasted Nuthatch
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/RBNU/WB-RBNU-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/RBNU/WB-RBNU-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/RBNU/WB-RBNU-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/RBNU/WB-RBNU-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/RBNU/WB-RBNU-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/RBNU/WB-RBNU-occc-10.png)
+
+
+
+### Ruby-crowned Kinglet
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/RCKI/WB-RCKI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/RCKI/WB-RCKI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/RCKI/WB-RCKI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/RCKI/WB-RCKI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/RCKI/WB-RCKI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/RCKI/WB-RCKI-occc-10.png)
+
+
+
+### Red Crossbill
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/RECR/WB-RECR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/RECR/WB-RECR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/RECR/WB-RECR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/RECR/WB-RECR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/RECR/WB-RECR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/RECR/WB-RECR-occc-10.png)
+
+
+
+### Red-eyed Vireo
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/REVI/WB-REVI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/REVI/WB-REVI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/REVI/WB-REVI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/REVI/WB-REVI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/REVI/WB-REVI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/REVI/WB-REVI-occc-10.png)
+
+
+
+### Rusty Blackbird
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/RUBL/WB-RUBL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/RUBL/WB-RUBL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/RUBL/WB-RUBL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/RUBL/WB-RUBL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/RUBL/WB-RUBL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/RUBL/WB-RUBL-occc-10.png)
+
+
+
+### Ruffed Grouse
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/RUGR/WB-RUGR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/RUGR/WB-RUGR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/RUGR/WB-RUGR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/RUGR/WB-RUGR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/RUGR/WB-RUGR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/RUGR/WB-RUGR-occc-10.png)
+
+
+
+### Red-winged Blackbird
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/RWBL/WB-RWBL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/RWBL/WB-RWBL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/RWBL/WB-RWBL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/RWBL/WB-RWBL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/RWBL/WB-RWBL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/RWBL/WB-RWBL-occc-10.png)
+
+
+
+### Savannah Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/SAVS/WB-SAVS-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/SAVS/WB-SAVS-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/SAVS/WB-SAVS-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/SAVS/WB-SAVS-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/SAVS/WB-SAVS-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/SAVS/WB-SAVS-occc-10.png)
+
+
+
+### Sedge Wren
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/SEWR/WB-SEWR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/SEWR/WB-SEWR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/SEWR/WB-SEWR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/SEWR/WB-SEWR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/SEWR/WB-SEWR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/SEWR/WB-SEWR-occc-10.png)
+
+
+
+### Solitary Sandpiper
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/SOSA/WB-SOSA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/SOSA/WB-SOSA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/SOSA/WB-SOSA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/SOSA/WB-SOSA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/SOSA/WB-SOSA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/SOSA/WB-SOSA-occc-10.png)
+
+
+
+### Song Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/SOSP/WB-SOSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/SOSP/WB-SOSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/SOSP/WB-SOSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/SOSP/WB-SOSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/SOSP/WB-SOSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/SOSP/WB-SOSP-occc-10.png)
+
+
+
+### Spotted Sandpiper
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/SPSA/WB-SPSA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/SPSA/WB-SPSA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/SPSA/WB-SPSA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/SPSA/WB-SPSA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/SPSA/WB-SPSA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/SPSA/WB-SPSA-occc-10.png)
+
+
+
+### Swamp Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/SWSP/WB-SWSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/SWSP/WB-SWSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/SWSP/WB-SWSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/SWSP/WB-SWSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/SWSP/WB-SWSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/SWSP/WB-SWSP-occc-10.png)
+
+
+
+### Swainson's Thrush
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/SWTH/WB-SWTH-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/SWTH/WB-SWTH-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/SWTH/WB-SWTH-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/SWTH/WB-SWTH-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/SWTH/WB-SWTH-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/SWTH/WB-SWTH-occc-10.png)
+
+
+
+### Tennessee Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/TEWA/WB-TEWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/TEWA/WB-TEWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/TEWA/WB-TEWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/TEWA/WB-TEWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/TEWA/WB-TEWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/TEWA/WB-TEWA-occc-10.png)
+
+
+
+### Townsend's Solitaire
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/TOSO/WB-TOSO-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/TOSO/WB-TOSO-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/TOSO/WB-TOSO-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/TOSO/WB-TOSO-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/TOSO/WB-TOSO-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/TOSO/WB-TOSO-occc-10.png)
+
+
+
+### Townsend's Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/TOWA/WB-TOWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/TOWA/WB-TOWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/TOWA/WB-TOWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/TOWA/WB-TOWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/TOWA/WB-TOWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/TOWA/WB-TOWA-occc-10.png)
+
+
+
+### Tree Swallow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/TRES/WB-TRES-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/TRES/WB-TRES-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/TRES/WB-TRES-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/TRES/WB-TRES-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/TRES/WB-TRES-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/TRES/WB-TRES-occc-10.png)
+
+
+
+### Varied Thrush
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/VATH/WB-VATH-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/VATH/WB-VATH-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/VATH/WB-VATH-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/VATH/WB-VATH-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/VATH/WB-VATH-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/VATH/WB-VATH-occc-10.png)
+
+
+
+### Veery
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/VEER/WB-VEER-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/VEER/WB-VEER-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/VEER/WB-VEER-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/VEER/WB-VEER-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/VEER/WB-VEER-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/VEER/WB-VEER-occc-10.png)
+
+
+
+### Vesper Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/VESP/WB-VESP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/VESP/WB-VESP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/VESP/WB-VESP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/VESP/WB-VESP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/VESP/WB-VESP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/VESP/WB-VESP-occc-10.png)
+
+
+
+### Warbling Vireo
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WAVI/WB-WAVI-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WAVI/WB-WAVI-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WAVI/WB-WAVI-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WAVI/WB-WAVI-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WAVI/WB-WAVI-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WAVI/WB-WAVI-occc-10.png)
+
+
+
+### White-breasted Nuthatch
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WBNU/WB-WBNU-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WBNU/WB-WBNU-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WBNU/WB-WBNU-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WBNU/WB-WBNU-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WBNU/WB-WBNU-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WBNU/WB-WBNU-occc-10.png)
+
+
+
+### White-crowned Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WCSP/WB-WCSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WCSP/WB-WCSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WCSP/WB-WCSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WCSP/WB-WCSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WCSP/WB-WCSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WCSP/WB-WCSP-occc-10.png)
+
+
+
+### Western Tanager
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WETA/WB-WETA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WETA/WB-WETA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WETA/WB-WETA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WETA/WB-WETA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WETA/WB-WETA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WETA/WB-WETA-occc-10.png)
+
+
+
+### Western Wood-Pewee
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WEWP/WB-WEWP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WEWP/WB-WEWP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WEWP/WB-WEWP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WEWP/WB-WEWP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WEWP/WB-WEWP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WEWP/WB-WEWP-occc-10.png)
+
+
+
+### Willow Ptarmigan
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WIPT/WB-WIPT-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WIPT/WB-WIPT-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WIPT/WB-WIPT-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WIPT/WB-WIPT-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WIPT/WB-WIPT-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WIPT/WB-WIPT-occc-10.png)
+
+
+
+### Wilson's Snipe
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WISN/WB-WISN-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WISN/WB-WISN-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WISN/WB-WISN-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WISN/WB-WISN-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WISN/WB-WISN-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WISN/WB-WISN-occc-10.png)
+
+
+
+### Wilson's Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WIWA/WB-WIWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WIWA/WB-WIWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WIWA/WB-WIWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WIWA/WB-WIWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WIWA/WB-WIWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WIWA/WB-WIWA-occc-10.png)
+
+
+
+### Winter Wren
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WIWR/WB-WIWR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WIWR/WB-WIWR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WIWR/WB-WIWR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WIWR/WB-WIWR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WIWR/WB-WIWR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WIWR/WB-WIWR-occc-10.png)
+
+
+
+### White-throated Sparrow
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WTSP/WB-WTSP-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WTSP/WB-WTSP-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WTSP/WB-WTSP-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WTSP/WB-WTSP-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WTSP/WB-WTSP-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WTSP/WB-WTSP-occc-10.png)
+
+
+
+### White-winged Crossbill
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/WWCR/WB-WWCR-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/WWCR/WB-WWCR-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/WWCR/WB-WWCR-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/WWCR/WB-WWCR-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/WWCR/WB-WWCR-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/WWCR/WB-WWCR-occc-10.png)
+
+
+
+### Yellow-bellied Flycatcher
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/YBFL/WB-YBFL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/YBFL/WB-YBFL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/YBFL/WB-YBFL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/YBFL/WB-YBFL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/YBFL/WB-YBFL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/YBFL/WB-YBFL-occc-10.png)
+
+
+
+### Yellow-bellied Sapsucker
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/YBSA/WB-YBSA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/YBSA/WB-YBSA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/YBSA/WB-YBSA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/YBSA/WB-YBSA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/YBSA/WB-YBSA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/YBSA/WB-YBSA-occc-10.png)
+
+
+
+### Yellow Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/YEWA/WB-YEWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/YEWA/WB-YEWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/YEWA/WB-YEWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/YEWA/WB-YEWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/YEWA/WB-YEWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/YEWA/WB-YEWA-occc-10.png)
+
+
+
+### Yellow-headed Blackbird
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/YHBL/WB-YHBL-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/YHBL/WB-YHBL-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/YHBL/WB-YHBL-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/YHBL/WB-YHBL-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/YHBL/WB-YHBL-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/YHBL/WB-YHBL-occc-10.png)
+
+
+
+### Yellow-rumped Warbler
+
+Boxplot showing expected (density with QPAD correction) vs. observed counts:
+
+![](d:/bam/2021/wbi/out/YRWA/WB-YRWA-box-1.png)
+
+Detections:
+
+![](d:/bam/2021/wbi/out/YRWA/WB-YRWA-det.png)
+
+Map:
+
+![](d:/bam/2021/wbi/out/YRWA/WB-YRWA-pred-1.png)
+
+Marginal effects for NALC:
+
+![](d:/bam/2021/wbi/out/YRWA/WB-YRWA-avg-nalc-1.png)
+
+Marginal effects for continuous predictors:
+
+![](d:/bam/2021/wbi/out/YRWA/WB-YRWA-resp-1.png)
+
+Bootstrap prediction concordance:
+
+![](d:/bam/2021/wbi/out/YRWA/WB-YRWA-occc-10.png)
+
+
+
