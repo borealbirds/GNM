@@ -2,4 +2,4 @@
 title: Regional Results
 ---
 
-- [Western Boreal Initiative](/western-boreal/)
+- [Western Boreal Initiative]({{ site.baseurl }}/regional-results/western-boreal/)
