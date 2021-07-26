@@ -198,3 +198,23 @@ for (i in 2:20) {
     fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
     qsavem(RES, file=fn)
 }
+
+## use all the variables for certain species to see how to improve models
+
+SPP2 <- c("RECR", "PUFI", "LCSP", "LISP", "MAWR", "SWSP", "TOSO",
+    "DOWO", "PIGR", "ATTW", "BEKI", "EAKI", "RUST", "GCSP", "HAWO", "HETH", "LALO")
+
+i <- 1
+for (spp in SPPx) {
+    gc()
+    cat(i, spp, "\n")
+    flush.console()
+    tmp <- try(fit_fun(i, spp, reg=NULL, cn=c("ROAD", CN)))
+    if (inherits(tmp, "try-error"))
+        tmp <- structure(as.character(tmp), class="try-error")
+    RES <- tmp
+    dir.create(paste0("d:/bam/2021/wbi/out/", spp))
+    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-fullCN-", i, ".qRData")
+    qsavem(RES, file=fn)
+}
+
