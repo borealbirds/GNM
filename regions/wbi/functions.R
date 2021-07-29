@@ -64,9 +64,10 @@ simple_auc <- function(ROC) {
     sum(dx * ROC$TPR[-1]) / sum(dx)
 }
 
-fit_fun <- function(i, spp, reg=NULL, cn=NULL) {
+fit_fun <- function(i, spp, reg=NULL, cn=NULL, gbm_only=FALSE) {
     if (is.null(cn))
-        cn <- unique(c("ROAD", names(DAIC[[spp]][1:10])))
+        cn <- names(DAIC[[spp]][1:10])
+    cn <- unique(c("ROAD", cn))
 
     d <- if (is.null(reg)) {
         get_data_all(spp, replace=i>1, cn0=cn)
@@ -96,32 +97,51 @@ fit_fun <- function(i, spp, reg=NULL, cn=NULL) {
         return(structure("gbm failed: null", class="try-error"))
     nd <- d
     logDgbm <- suppressWarnings(predict(b, newdata=nd, n.trees=b$n.trees))
-    m <- glm(count ~ .-offset, data=d, family="poisson", offset=d$offset)
-    logDglm <- model.matrix(m) %*% coef(m)
+    if (!gbm_only) {
+        m <- glm(count ~ .-offset, data=d, family="poisson", offset=d$offset)
+        logDglm <- model.matrix(m) %*% coef(m)
 
-    s1 <- lm(logDgbm ~ nalc, data=d)
-    s2 <- lm(logDgbm ~ ., data=d[,-(1:2)])
-    p1 <- fitted(s1)
-    p2 <- fitted(s2)
+        s1 <- lm(logDgbm ~ nalc, data=d)
+        s2 <- lm(logDgbm ~ ., data=d[,-(1:2)])
+        p1 <- fitted(s1)
+        p2 <- fitted(s2)
 
-    v <- data.frame(y=d$count, off=d$offset,
-        glm=logDglm, gbm=logDgbm, ssn=p1, ssa=p2)
-    rownames(v) <- rownames(d)
+        v <- data.frame(y=d$count, off=d$offset,
+            glm=logDglm, gbm=logDgbm, ssn=p1, ssa=p2)
+        rownames(v) <- rownames(d)
 
-    AUC <- apply(v, 2, function(z)
-        simple_auc(simple_roc(ifelse(v$y>0, 1, 0), exp(z+v$off))))
+        AUC <- apply(v, 2, function(z)
+            simple_auc(simple_roc(ifelse(v$y>0, 1, 0), exp(z+v$off))))
 
-    ## add here glm based smooth
+        out <- list(i=i, spp=spp,
+            reg=if (is.null(reg)) "ALL" else reg,
+            vars=colnames(d)[-(1:2)],
+            pk=rownames(v),
+            #obs=v,
+            AUC=AUC,
+            gbm=b,
+            glm=coef(m),
+            ssn=coef(s1),
+            ssa=coef(s2))
+    } else {
+        v <- data.frame(y=d$count, off=d$offset,
+            glm=NA, gbm=logDgbm, ssn=NA, ssa=NA)
+        rownames(v) <- rownames(d)
+        AUC <- apply(v, 2, function(z)
+            simple_auc(simple_roc(ifelse(v$y>0, 1, 0), exp(z+v$off))))
+        AUC[c("glm", "ssn", "ssa")] <- NA
+        out <- list(i=i, spp=spp,
+            reg=if (is.null(reg)) "ALL" else reg,
+            vars=colnames(d)[-(1:2)],
+            pk=rownames(v),
+            #obs=v,
+            AUC=AUC,
+            gbm=b,
+            glm=NULL,
+            ssn=NULL,
+            ssa=NULL)
+    }
 
-    out <- list(i=i, spp=spp,
-        reg=if (is.null(reg)) "ALL" else reg,
-        vars=colnames(d)[-(1:2)],
-        pk=rownames(v),
-        #obs=v,
-        AUC=AUC,
-        gbm=b,
-        glm=coef(m),
-        ssn=coef(s1), ssa=coef(s2))
     class(out) <- "wb_fit"
     out
 }

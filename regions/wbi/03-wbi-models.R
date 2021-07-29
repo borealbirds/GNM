@@ -202,19 +202,54 @@ for (i in 2:20) {
 ## use all the variables for certain species to see how to improve models
 
 SPP2 <- c("RECR", "PUFI", "LCSP", "LISP", "MAWR", "SWSP", "TOSO",
-    "DOWO", "PIGR", "ATTW", "BEKI", "EAKI", "RUST", "GCSP", "HAWO", "HETH", "LALO")
+    "DOWO", "PIGR", "ATTW", "BEKI", "EAKI", "EUST", "GCSP", "HAWO", "HETH", "LALO")
 
 i <- 1
 for (spp in SPPx) {
     gc()
     cat(i, spp, "\n")
     flush.console()
-    tmp <- try(fit_fun(i, spp, reg=NULL, cn=c("ROAD", CN)))
+    tmp <- try(fit_fun(i, spp, reg=NULL, cn=CN, gbm_only=TRUE))
     if (inherits(tmp, "try-error"))
         tmp <- structure(as.character(tmp), class="try-error")
     RES <- tmp
     dir.create(paste0("d:/bam/2021/wbi/out/", spp))
     fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-fullCN-", i, ".qRData")
     qsavem(RES, file=fn)
+}
+
+## find top variables
+spp <- "RECR"
+fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-fullCN-", i, ".qRData")
+qload(fn)
+
+r <- rel_inf(RES$gbm)
+sort(names(DAIC[[spp]][1:10]))
+sort(rownames(r)[1:10])
+mefa4::compare_sets(names(DAIC[[spp]][1:10]), rownames(r)[1:10])
+
+## refit
+
+
+i <- 1
+for (spp in SPPx) {
+    gc()
+    cat(i, spp, "\n")
+    flush.console()
+    fn1 <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-fullCN-", i, ".qRData")
+    qload(fn1)
+    RES0 <- RES
+    rm(RES)
+    if (!inherits(RES0, "try-error")) {
+        r <- rel_inf(RES0$gbm)
+        cn <- rownames(r)[1:10]
+        tmp <- try(fit_fun(i, spp, reg=NULL, cn=cn))
+        if (inherits(tmp, "try-error"))
+            tmp <- structure(as.character(tmp), class="try-error")
+        RES <- tmp
+        fn2 <- paste0("d:/bam/2021/wbi/out/", spp, "/",
+            "WB-", spp, "-refit10-", i, ".qRData")
+        qsavem(RES, file=fn2)
+    }
 }
 
