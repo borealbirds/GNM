@@ -209,13 +209,15 @@ for (spp in SPPx) {
     gc()
     cat(i, spp, "\n")
     flush.console()
-    tmp <- try(fit_fun(i, spp, reg=NULL, cn=CN, gbm_only=TRUE))
-    if (inherits(tmp, "try-error"))
-        tmp <- structure(as.character(tmp), class="try-error")
-    RES <- tmp
-    dir.create(paste0("d:/bam/2021/wbi/out/", spp))
-    fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-fullCN-", i, ".qRData")
-    qsavem(RES, file=fn)
+    if (!(spp %in% SPP2)) {
+        tmp <- try(fit_fun(i, spp, reg=NULL, cn=CN, gbm_only=TRUE))
+        if (inherits(tmp, "try-error"))
+            tmp <- structure(as.character(tmp), class="try-error")
+        RES <- tmp
+        dir.create(paste0("d:/bam/2021/wbi/out/", spp))
+        fn <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-fullCN-", i, ".qRData")
+        qsavem(RES, file=fn)
+    }
 }
 
 ## find top variables
@@ -228,11 +230,36 @@ sort(names(DAIC[[spp]][1:10]))
 sort(rownames(r)[1:10])
 mefa4::compare_sets(names(DAIC[[spp]][1:10]), rownames(r)[1:10])
 
+## compare AUC from the 3 options
+
+#spp <- "ALFL"
+auc <- list()
+for (spp in SPP2) {
+    cat(spp, "\n")
+    flush.console()
+
+    fn0 <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-ALL-", i, ".qRData")
+    fn1 <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-fullCN-", i, ".qRData")
+    fn2 <- paste0("d:/bam/2021/wbi/out/", spp, "/", "WB-", spp, "-refit10-", i, ".qRData")
+    qload(fn0)
+    RES0 <- RES
+    qload(fn1)
+    RES1 <- RES
+    qload(fn2)
+    RES2 <- RES
+
+    auc[[spp]] <- c(RES0$AUC[c("y", "off", "gbm")],
+        gbm1=unname(RES1$AUC["gbm"]),
+        gbm2=unname(RES2$AUC["gbm"]))
+
+}
+
+
 ## refit
 
 
 i <- 1
-for (spp in SPPx) {
+for (spp in SPP2) {
     gc()
     cat(i, spp, "\n")
     flush.console()
