@@ -298,7 +298,7 @@ from the 1:1 line).
 Working with maps
 -----------------
 
-The 1 km<sup>2</sum> resolution GeoTIFF raster files are in
+The 1 km<sup>2</sup> resolution GeoTIFF raster files are in
 [this](https://drive.google.com/drive/folders/1exWa6vfhGo1DNUL4ei2baDz77as7jYzY?usp=sharing)
 shared Google Drive folder, anyone can view.
 
